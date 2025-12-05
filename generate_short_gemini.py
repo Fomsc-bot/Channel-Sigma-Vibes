@@ -15,7 +15,7 @@ VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 FPS = 30
 SCENE_DURATION = 5  # seconds per scene
-MODEL_NAME = "models/gemini-2.5-flash"  # choose from your list_models output
+MODEL_NAME = "models/gemini-2.5-flash"  # use full model path from list_gemini_models.py
 
 # ===============================
 # Configure Gemini
@@ -39,12 +39,16 @@ Output JSON like this:
 
 def generate_script():
     print("[*] Generating script from model...")
-    response = genai.generate_text(
-        model=MODEL_NAME,
-        prompt=PROMPT,
-        temperature=0.7
-    )
-    
+    try:
+        response = genai.generate_content(
+            model=MODEL_NAME,
+            prompt=PROMPT,
+            temperature=0.7
+        )
+    except Exception as e:
+        print("[!] Gemini API error:", e)
+        return []
+
     # The generated text is in response.output_text
     text = response.output_text
     try:
@@ -54,7 +58,7 @@ def generate_script():
     except Exception as e:
         print("[!] Failed to parse JSON from Gemini:")
         print(text)
-        raise e
+        return []
 
 # ===============================
 # Compose video
