@@ -9,9 +9,8 @@ from moviepy.editor import ImageClip, concatenate_videoclips
 
 import google.generativeai as genai
 
-
 # ---------------------------------------------------------
-#  CONFIG
+# CONFIG
 # ---------------------------------------------------------
 WIDTH = 1080
 HEIGHT = 1920
@@ -24,98 +23,94 @@ BODY_FONT_SIZE = 70
 OUT_DIR = Path("outputs")
 OUT_DIR.mkdir(exist_ok=True)
 
+PROMPT = """
+Generate a YouTube Shorts script with 4 scenes:
+- Each scene must include: { "text": "text on screen", "duration": <seconds> }
+- Tone: Sigma mindset, short & punchy quotes
+- Total duration: 15–30 seconds
+- Return strictly valid JSON: { "scenes": [ ... ] }
+"""
 
 # ---------------------------------------------------------
-#  GEMINI CLIENT
+# Gemini 2.0 Flash client
 # ---------------------------------------------------------
 def get_gemini_client():
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("Missing GEMINI_API_KEY in environment variables.")
     genai.configure(api_key=api_key)
-    return genai.GenerativeModel("gemini-1.5-flash")
-
+    return "gemini-2.0-flash"
 
 # ---------------------------------------------------------
-#  REQUEST SCRIPT FROM GEMINI
+# Generate script from Gemini
 # ---------------------------------------------------------
-PROMPT = """
-You generate a YouTube short script following this structure:
+def generate_script():
+    model_name = get_gemini_client()
+    response = genai.generate(
+        model=model_name,
+        prompt=PROMPT,
+        temperature=0.7,
+        max_output_tokens=500
+    )
+    raw_text = response.candidates[0].content.strip()
 
-- 4 scenes
-- Each scene must include:
-    { "text": "text on screen", "duration": <seconds> }
-- Total duration 15–30 seconds
-- Tone: Sigma mindset, intense, punchy lines, short powerful quotes.
-- Keep each scene VERY short and impactful.
-- No narration instructions, no camera directions, text only.
+    # Clean any code fences
+    if raw_text.startswith("```json"):
+        raw_text = raw_text[7:]
+    if raw_text.endswith("```"):
+        raw_text = raw_text[:-3]
 
-Return strictly valid JSON: { "scenes": [ ... ] }
-"""
-
-def generate_script(model):
-    response = model.generate_content(PROMPT)
-    cleaned = response.text.strip().strip("```json").strip("```")
-    data = json.loads(cleaned)
+    data = json.loads(raw_text)
     return data["scenes"]
 
-
 # ---------------------------------------------------------
-#  MAKE TEXT FRAME (PIL)
+# Make PIL image frame for text
 # ---------------------------------------------------------
 def make_image_frame(text: str):
     img = Image.new("RGB", (WIDTH, HEIGHT), BG_COLOR)
     draw = ImageDraw.Draw(img)
 
-    # Load fonts
     try:
-        title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", TITLE_FONT_SIZE)
-        body_font = ImageFont.truetype("DejaVuSans.ttf", BODY_FONT_SIZE)
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", BODY_FONT_SIZE)
     except:
-        title_font = ImageFont.load_default()
-        body_font = ImageFont.load_default()
+        font = ImageFont.load_default()
 
-    # Split into lines nicely
-    lines = []
-    for line in text.split("\n"):
-        lines.append(line.strip())
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
 
-    # Calculate text block height
     total_height = 0
+    line_sizes = []
     for line in lines:
-        w, h = draw.textbbox((0, 0), line, font=body_font)[2:]
+        bbox = draw.textbbox((0, 0), line, font=font)
+        w, h = bbox[2], bbox[3]
+        line_sizes.append((w, h))
         total_height += h + 10
 
     y = (HEIGHT - total_height) // 2
-
-    for line in lines:
-        w, h = draw.textbbox((0, 0), line, font=body_font)[2:]
+    for i, line in enumerate(lines):
+        w, h = line_sizes[i]
         x = (WIDTH - w) // 2
-        draw.text((x, y), line, fill=TEXT_COLOR, font=body_font)
+        draw.text((x, y), line, fill=TEXT_COLOR, font=font)
         y += h + 10
 
     return img
 
-
 # ---------------------------------------------------------
-#  COMPOSE VIDEO
+# Compose video from scenes
 # ---------------------------------------------------------
 def compose_video(scenes, output_path: Path):
     clips = []
 
-    for scene in scenes:
+    for idx, scene in enumerate(scenes):
         text = scene["text"]
         dur = float(scene["duration"])
 
         frame = make_image_frame(text)
-        frame_path = OUT_DIR / f"frame_tmp.png"
-        frame.save(frame_path)
+        tmp_frame_path = OUT_DIR / f"frame_{idx}.png"
+        frame.save(tmp_frame_path)
 
-        clip = ImageClip(str(frame_path)).set_duration(dur)
+        clip = ImageClip(str(tmp_frame_path)).set_duration(dur)
 
-        # ★ IMPORTANT FIX: remove zoom animation (no resize = no ANTIALIAS bug)
-        clip = clip
-
+        # No zoom/resize to avoid Pillow ANTIALIAS issues
         clips.append(clip)
 
     final_video = concatenate_videoclips(clips, method="compose")
@@ -126,30 +121,22 @@ def compose_video(scenes, output_path: Path):
         audio=False,
         threads=4
     )
-
-    print(f"[+] Saved video -> {output_path}")
-
+    print(f"[+] Video saved to {output_path}")
 
 # ---------------------------------------------------------
-#  MAIN
+# MAIN
 # ---------------------------------------------------------
 def main():
-    print("[*] Creating Gemini model...")
-    model = get_gemini_client()
+    print("[*] Generating script from Gemini 2.0 Flash...")
+    scenes = generate_script()
+    print(f"[+] Received {len(scenes)} scenes.")
 
-    print("[*] Generating script...")
-    scenes = generate_script(model)
-
-    ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    out_file = OUT_DIR / f"sigma_short_{ts}.mp4"
+    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    out_file = OUT_DIR / f"sigma_short_{timestamp}.mp4"
 
     print("[*] Composing video...")
     compose_video(scenes, out_file)
-
     print("[✔] Done!")
-
 
 if __name__ == "__main__":
     main()
-
-
