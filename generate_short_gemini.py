@@ -17,7 +17,6 @@ HEIGHT = 1920
 BG_COLOR = (0, 0, 0)
 TEXT_COLOR = (255, 255, 255)
 
-TITLE_FONT_SIZE = 90
 BODY_FONT_SIZE = 70
 
 OUT_DIR = Path("outputs")
@@ -26,9 +25,9 @@ OUT_DIR.mkdir(exist_ok=True)
 PROMPT = """
 Generate a YouTube Shorts script with 4 scenes:
 - Each scene must include: { "text": "text on screen", "duration": <seconds> }
-- Tone: Sigma mindset, short & punchy quotes
+- Tone: Sigma mindset, short & punchy
 - Total duration: 15–30 seconds
-- Return strictly valid JSON: { "scenes": [ ... ] }
+- Return strictly valid JSON
 """
 
 # ---------------------------------------------------------
@@ -46,15 +45,16 @@ def get_gemini_client():
 # ---------------------------------------------------------
 def generate_script():
     model_name = get_gemini_client()
-    response = genai.generate(
+    response = genai.generate_text(
         model=model_name,
         prompt=PROMPT,
         temperature=0.7,
         max_output_tokens=500
     )
-    raw_text = response.candidates[0].content.strip()
 
-    # Clean any code fences
+    raw_text = response.result[0].content[0].text.strip()
+
+    # Clean code fences if any
     if raw_text.startswith("```json"):
         raw_text = raw_text[7:]
     if raw_text.endswith("```"):
@@ -109,8 +109,6 @@ def compose_video(scenes, output_path: Path):
         frame.save(tmp_frame_path)
 
         clip = ImageClip(str(tmp_frame_path)).set_duration(dur)
-
-        # No zoom/resize to avoid Pillow ANTIALIAS issues
         clips.append(clip)
 
     final_video = concatenate_videoclips(clips, method="compose")
