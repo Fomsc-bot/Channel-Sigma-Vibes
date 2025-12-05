@@ -6,28 +6,21 @@ from pathlib import Path
 from moviepy.editor import TextClip, concatenate_videoclips
 import google.generativeai as genai
 
-# ===============================
 # CONFIG
-# ===============================
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 FPS = 30
-SCENE_DURATION = 5  # seconds per scene
+SCENE_DURATION = 5
 
-# Use a stable, available model
-MODEL_NAME = "models/gemini-flash-latest"
+# Use a working model
+MODEL_NAME = "models/gemini-2.5-flash"
 
-# ===============================
 # Configure Gemini
-# ===============================
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# ===============================
-# Prompt for Gemini
-# ===============================
 PROMPT = """
 Generate 3 motivational Sigma mindset rules for a YouTube Short.
 Output JSON like this:
@@ -40,29 +33,25 @@ Output JSON like this:
 }
 """
 
-# ===============================
-# Generate script/scenes
-# ===============================
 def generate_script():
     print("[*] Generating script from model...")
     try:
-        response = genai.generate_text(
+        # Use generate_content for Flash models
+        response = genai.generate_content(
             model=MODEL_NAME,
             prompt=PROMPT,
             temperature=0.7
         )
+        # The generated text is in response.output_text
         text = response.output_text
         data = json.loads(text)
         scenes = data.get("scenes", [])
         return scenes
     except Exception as e:
         print("[!] Gemini API error:", e)
-        print("[!] Generated text was:\n", response.output_text if 'response' in locals() else "")
+        print("[!] Generated text was:\n", text if 'text' in locals() else "")
         return []
 
-# ===============================
-# Compose video
-# ===============================
 def create_scene_clip(title, subtitle, duration=SCENE_DURATION):
     txt = f"{title}\n{subtitle}"
     clip = TextClip(
@@ -87,9 +76,6 @@ def compose_video(scenes):
     final_video = concatenate_videoclips(clips)
     return final_video
 
-# ===============================
-# Main
-# ===============================
 def main():
     scenes = generate_script()
     if not scenes:
