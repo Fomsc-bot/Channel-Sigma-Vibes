@@ -11,11 +11,14 @@ import google.generativeai as genai
 # ===============================
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
+
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 FPS = 30
 SCENE_DURATION = 5  # seconds per scene
-MODEL_NAME = "models/gemini-2.5-flash"  # full model path
+
+# Use a stable, available model
+MODEL_NAME = "models/gemini-flash-latest"
 
 # ===============================
 # Configure Gemini
@@ -23,7 +26,7 @@ MODEL_NAME = "models/gemini-2.5-flash"  # full model path
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # ===============================
-# Generate script/scenes
+# Prompt for Gemini
 # ===============================
 PROMPT = """
 Generate 3 motivational Sigma mindset rules for a YouTube Short.
@@ -37,6 +40,9 @@ Output JSON like this:
 }
 """
 
+# ===============================
+# Generate script/scenes
+# ===============================
 def generate_script():
     print("[*] Generating script from model...")
     try:
@@ -45,19 +51,13 @@ def generate_script():
             prompt=PROMPT,
             temperature=0.7
         )
-    except Exception as e:
-        print("[!] Gemini API error:", e)
-        return []
-
-    # response.output_text contains the generated text
-    text = response.output_text
-    try:
+        text = response.output_text
         data = json.loads(text)
         scenes = data.get("scenes", [])
         return scenes
     except Exception as e:
-        print("[!] Failed to parse JSON from Gemini:")
-        print(text)
+        print("[!] Gemini API error:", e)
+        print("[!] Generated text was:\n", response.output_text if 'response' in locals() else "")
         return []
 
 # ===============================
@@ -65,9 +65,15 @@ def generate_script():
 # ===============================
 def create_scene_clip(title, subtitle, duration=SCENE_DURATION):
     txt = f"{title}\n{subtitle}"
-    clip = TextClip(txt, fontsize=80, color="white",
-                    size=(VIDEO_WIDTH, VIDEO_HEIGHT),
-                    method="caption", align="center", font="Arial-Bold")
+    clip = TextClip(
+        txt,
+        fontsize=80,
+        color="white",
+        size=(VIDEO_WIDTH, VIDEO_HEIGHT),
+        method="caption",
+        align="center",
+        font="Arial-Bold"
+    )
     clip = clip.set_duration(duration)
     return clip
 
