@@ -9,16 +9,12 @@ from moviepy.editor import ImageClip, concatenate_videoclips
 
 import google.generativeai as genai
 
-# ---------------------------------------------------------
-# CONFIG
-# ---------------------------------------------------------
+# ------------------- CONFIG -------------------
 WIDTH = 1080
 HEIGHT = 1920
 BG_COLOR = (0, 0, 0)
 TEXT_COLOR = (255, 255, 255)
-
 BODY_FONT_SIZE = 70
-
 OUT_DIR = Path("outputs")
 OUT_DIR.mkdir(exist_ok=True)
 
@@ -30,21 +26,18 @@ Generate a YouTube Shorts script with 4 scenes:
 - Return strictly valid JSON
 """
 
-# ---------------------------------------------------------
-# Gemini / Bison client
-# ---------------------------------------------------------
+# ------------------- CONFIGURE CLIENT -------------------
 def configure_genai():
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("Missing GEMINI_API_KEY in environment variables.")
     genai.configure(api_key=api_key)
 
-# ---------------------------------------------------------
-# Generate script from model
-# ---------------------------------------------------------
+# ------------------- GENERATE SCRIPT -------------------
 def generate_script():
     configure_genai()
-    model_name = "models/text-bison-001"  # ✅ Use working model
+    # Use the official Bison model that works for all accounts
+    model_name = "models/text-bison-001"
 
     response = genai.generate_text(
         model=model_name,
@@ -64,9 +57,7 @@ def generate_script():
     data = json.loads(raw_text)
     return data["scenes"]
 
-# ---------------------------------------------------------
-# Make PIL image frame for text
-# ---------------------------------------------------------
+# ------------------- MAKE IMAGE FRAME -------------------
 def make_image_frame(text: str):
     img = Image.new("RGB", (WIDTH, HEIGHT), BG_COLOR)
     draw = ImageDraw.Draw(img)
@@ -95,9 +86,7 @@ def make_image_frame(text: str):
 
     return img
 
-# ---------------------------------------------------------
-# Compose video from scenes
-# ---------------------------------------------------------
+# ------------------- COMPOSE VIDEO -------------------
 def compose_video(scenes, output_path: Path):
     clips = []
 
@@ -122,9 +111,7 @@ def compose_video(scenes, output_path: Path):
     )
     print(f"[+] Video saved to {output_path}")
 
-# ---------------------------------------------------------
-# MAIN
-# ---------------------------------------------------------
+# ------------------- MAIN -------------------
 def main():
     print("[*] Generating script from model...")
     scenes = generate_script()
@@ -139,4 +126,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
