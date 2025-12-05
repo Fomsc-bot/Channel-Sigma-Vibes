@@ -1,128 +1,95 @@
 #!/usr/bin/env python3
 import os
 import json
-from datetime import datetime
+import uuid
 from pathlib import Path
-
-from PIL import Image, ImageDraw, ImageFont
-from moviepy.editor import ImageClip, concatenate_videoclips
-
+from moviepy.editor import TextClip, CompositeVideoClip, concatenate_videoclips, AudioFileClip
 import google.generativeai as genai
 
-# ------------------- CONFIG -------------------
-WIDTH = 1080
-HEIGHT = 1920
-BG_COLOR = (0, 0, 0)
-TEXT_COLOR = (255, 255, 255)
-BODY_FONT_SIZE = 70
-OUT_DIR = Path("outputs")
-OUT_DIR.mkdir(exist_ok=True)
+# ===============================
+# CONFIG
+# ===============================
+OUTPUT_DIR = Path("outputs")
+OUTPUT_DIR.mkdir(exist_ok=True)
+VIDEO_WIDTH = 1080
+VIDEO_HEIGHT = 1920
+FPS = 30
+SCENE_DURATION = 5  # seconds per scene
+MODEL_NAME = "models/gemini-2.0-flash"  # choose one from list_models output
 
+# ===============================
+# Gemini client
+# ===============================
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+# ===============================
+# Generate script/scenes
+# ===============================
 PROMPT = """
-Generate a YouTube Shorts script with 4 scenes:
-- Each scene must include: { "text": "text on screen", "duration": <seconds> }
-- Tone: Sigma mindset, short & punchy
-- Total duration: 15–30 seconds
-- Return strictly valid JSON
+Generate 3 motivational Sigma mindset rules for a YouTube Short.
+Output JSON like this:
+{
+  "scenes": [
+    {"title": "Scene 1 title", "subtitle": "Scene 1 subtitle"},
+    {"title": "Scene 2 title", "subtitle": "Scene 2 subtitle"},
+    {"title": "Scene 3 title", "subtitle": "Scene 3 subtitle"}
+  ]
+}
 """
 
-# ------------------- CONFIGURE CLIENT -------------------
-def configure_genai():
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("Missing GEMINI_API_KEY in environment variables.")
-    genai.configure(api_key=api_key)
-
-# ------------------- GENERATE SCRIPT -------------------
 def generate_script():
-    configure_genai()
-    # Use the official Bison model that works for all accounts
-    model_name = "models/text-bison-001"
-
-    response = genai.generate_text(
-        model=model_name,
-        prompt=PROMPT,
-        temperature=0.7,
-        max_output_tokens=500
-    )
-
-    raw_text = response.result[0].content[0].text.strip()
-
-    # Remove code fences if present
-    if raw_text.startswith("```json"):
-        raw_text = raw_text[7:]
-    if raw_text.endswith("```"):
-        raw_text = raw_text[:-3]
-
-    data = json.loads(raw_text)
-    return data["scenes"]
-
-# ------------------- MAKE IMAGE FRAME -------------------
-def make_image_frame(text: str):
-    img = Image.new("RGB", (WIDTH, HEIGHT), BG_COLOR)
-    draw = ImageDraw.Draw(img)
-
-    try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", BODY_FONT_SIZE)
-    except:
-        font = ImageFont.load_default()
-
-    lines = [line.strip() for line in text.split("\n") if line.strip()]
-
-    total_height = 0
-    line_sizes = []
-    for line in lines:
-        bbox = draw.textbbox((0, 0), line, font=font)
-        w, h = bbox[2], bbox[3]
-        line_sizes.append((w, h))
-        total_height += h + 10
-
-    y = (HEIGHT - total_height) // 2
-    for i, line in enumerate(lines):
-        w, h = line_sizes[i]
-        x = (WIDTH - w) // 2
-        draw.text((x, y), line, fill=TEXT_COLOR, font=font)
-        y += h + 10
-
-    return img
-
-# ------------------- COMPOSE VIDEO -------------------
-def compose_video(scenes, output_path: Path):
-    clips = []
-
-    for idx, scene in enumerate(scenes):
-        text = scene["text"]
-        dur = float(scene["duration"])
-
-        frame = make_image_frame(text)
-        tmp_frame_path = OUT_DIR / f"frame_{idx}.png"
-        frame.save(tmp_frame_path)
-
-        clip = ImageClip(str(tmp_frame_path)).set_duration(dur)
-        clips.append(clip)
-
-    final_video = concatenate_videoclips(clips, method="compose")
-    final_video.write_videofile(
-        str(output_path),
-        fps=30,
-        codec="libx264",
-        audio=False,
-        threads=4
-    )
-    print(f"[+] Video saved to {output_path}")
-
-# ------------------- MAIN -------------------
-def main():
     print("[*] Generating script from model...")
+    response = genai.generate_content(
+        model=MODEL_NAME,
+        prompt=PROMPT,
+        temperature=0.7
+    )
+
+    # Gemini returns structured JSON in content[0].text
+    text = response.output_text
+    try:
+        data = json.loads(text)
+        scenes = data.get("scenes", [])
+        return scenes
+    except Exception as e:
+        print("[!] Failed to parse JSON from Gemini:")
+        print(text)
+        raise e
+
+# ===============================
+# Compose video
+# ===============================
+def create_scene_clip(title, subtitle, duration=SCENE_DURATION):
+    # Vertical text clip
+    txt = f"{title}\n{subtitle}"
+    clip = TextClip(txt, fontsize=80, color="white", size=(VIDEO_WIDTH, VIDEO_HEIGHT), method="caption", align="center", font="Arial-Bold")
+    clip = clip.set_duration(duration)
+    return clip
+
+def compose_video(scenes):
+    clips = []
+    for scene in scenes:
+        title = scene.get("title", "")
+        subtitle = scene.get("subtitle", "")
+        clip = create_scene_clip(title, subtitle)
+        clips.append(clip)
+    final_video = concatenate_videoclips(clips)
+    return final_video
+
+# ===============================
+# Main
+# ===============================
+def main():
     scenes = generate_script()
-    print(f"[+] Received {len(scenes)} scenes.")
+    if not scenes:
+        print("[!] No scenes generated.")
+        return
 
-    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    out_file = OUT_DIR / f"sigma_short_{timestamp}.mp4"
-
-    print("[*] Composing video...")
-    compose_video(scenes, out_file)
-    print("[✔] Done!")
+    print(f"[*] Composing video with {len(scenes)} scenes...")
+    video = compose_video(scenes)
+    filename = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
+    video.write_videofile(str(filename), fps=FPS)
+    print(f"[+] Video saved to {filename}")
 
 if __name__ == "__main__":
     main()
