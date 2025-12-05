@@ -8,6 +8,7 @@ on:
 jobs:
   generate:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,18 +23,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Create outputs dir
+      - name: Create outputs directory
         run: mkdir -p outputs
 
       - name: Run generator
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          python generate_short_gemini.py
+        run: python generate_short_gemini.py
 
-      - name: Upload artifacts
+      - name: Upload Shorts as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: sigma-shorts
           path: outputs/*.mp4
-
+          if-no-files-found: warn
