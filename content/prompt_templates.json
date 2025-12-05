@@ -1,0 +1,10 @@
+{
+  "channel_name": "Sigma Vibes",
+  "short_goal": "Create a high-energy, 15-25s YouTube Short in vertical format for 'Sigma Vibes'.",
+  "default_scene_durations": {
+    "hook": 3,
+    "tip": 7,
+    "cta": 3
+  },
+  "instructions_for_model": "Produce JSON only. Create 3-4 scenes: hook, 1-2 tips (each short), and CTA. Each scene needs: title (short hook line), subtitle (one-line supporting text), voice_text (what should be spoken), and duration_seconds (integer). Make them punchy, contrarian and 'Sigma' in tone. Output strictly valid JSON with top-level key 'scenes' array and 'total_duration'."
+}
