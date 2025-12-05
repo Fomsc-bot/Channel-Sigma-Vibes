@@ -4,23 +4,32 @@ import json
 import uuid
 from pathlib import Path
 from moviepy.editor import TextClip, concatenate_videoclips
-import google.generativeai as genai
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
+# ===============================
 # CONFIG
+# ===============================
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 FPS = 30
-SCENE_DURATION = 5
+SCENE_DURATION = 5  # seconds per scene
 
-# Use a working model
-MODEL_NAME = "models/gemini-2.5-flash"
+MODEL_NAME = "tiiuae/falcon-7b-instruct"  # free Hugging Face model
 
-# Configure Gemini
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# ===============================
+# Load model
+# ===============================
+print("[*] Loading Hugging Face model...")
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
+generator = pipeline("text-generation", model=model, tokenizer=tokenizer)
 
+# ===============================
+# Prompt
+# ===============================
 PROMPT = """
 Generate 3 motivational Sigma mindset rules for a YouTube Short.
 Output JSON like this:
@@ -33,25 +42,24 @@ Output JSON like this:
 }
 """
 
+# ===============================
+# Generate script
+# ===============================
 def generate_script():
-    print("[*] Generating script from model...")
+    print("[*] Generating script from Hugging Face model...")
     try:
-        # Use generate_content for Flash models
-        response = genai.generate_content(
-            model=MODEL_NAME,
-            prompt=PROMPT,
-            temperature=0.7
-        )
-        # The generated text is in response.output_text
-        text = response.output_text
-        data = json.loads(text)
+        output = generator(PROMPT, max_length=512, do_sample=True, temperature=0.7)[0]["generated_text"]
+        data = json.loads(output)
         scenes = data.get("scenes", [])
         return scenes
     except Exception as e:
-        print("[!] Gemini API error:", e)
-        print("[!] Generated text was:\n", text if 'text' in locals() else "")
+        print("[!] Hugging Face generation error:", e)
+        print("[!] Generated text was:\n", output if 'output' in locals() else "")
         return []
 
+# ===============================
+# Compose video
+# ===============================
 def create_scene_clip(title, subtitle, duration=SCENE_DURATION):
     txt = f"{title}\n{subtitle}"
     clip = TextClip(
@@ -76,6 +84,9 @@ def compose_video(scenes):
     final_video = concatenate_videoclips(clips)
     return final_video
 
+# ===============================
+# Main
+# ===============================
 def main():
     scenes = generate_script()
     if not scenes:
