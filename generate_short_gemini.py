@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 generate_short_gemini.py
-Generates a vertical (9:16) YouTube Short using Gemini for script + TTS, and MoviePy for video composition.
+Generates two vertical YouTube Shorts (text-only) using Gemini for script writing.
 
-Requires:
-  - GEMINI_API_KEY environment variable (create one in Google AI Studio).
+Requirements:
+  - Set GEMINI_API_KEY environment variable (Google AI Studio / google-genai API key).
   - pip install -r requirements.txt
 
 Run:
@@ -16,228 +16,232 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
-import base64
-import wave
+import traceback
 
-# Gemini SDK + types
-from google import genai
-from google.genai import types
+# Gemini SDK
+try:
+    from google import genai
+    from google.genai import types
+except Exception:
+    genai = None
 
-# Movie/graphics/audio
-from moviepy.editor import ImageClip, concatenate_videoclips, AudioFileClip
+# Movie/graphics
+from moviepy.editor import ImageClip, concatenate_videoclips
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 
 # Config
-W, H = 1080, 1920
+W, H = 1080, 1920  # vertical 9:16
 OUTPUT_DIR = Path("outputs")
 PROMPT_FILE = Path("content/prompt_templates.json")
-
-# Make sure output dir exists
+ASSET_FONTS = [Path("assets/fonts/DejaVuSans-Bold.ttf"), Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")]
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# --- Helper: load prompts ---
+# ---------------------------
+# Utilities
+# ---------------------------
 def load_prompt_templates(path=PROMPT_FILE):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-# --- Gems: Gemini client setup ---
 def make_genai_client():
-    # The SDK automatically picks GEMINI_API_KEY if present.
     api_key = os.environ.get("GEMINI_API_KEY")
+    if genai is None:
+        raise RuntimeError("google-genai SDK not installed or import failed. pip install google-genai")
     if not api_key:
-        raise RuntimeError("Set GEMINI_API_KEY environment variable (get it from Google AI Studio).")
+        raise RuntimeError("Set GEMINI_API_KEY environment variable.")
     client = genai.Client(api_key=api_key)
     return client
 
-# --- 1) Ask Gemini to produce a script in JSON ---
-def request_script_json(client, prompt_templates):
-    system = (
-        "You are a short-form YouTube writer for 'Sigma Vibes'. Follow instructions strictly. "
-        "Return ONLY valid JSON (no preface/explanations)."
-    )
-    # Compose prompt:
-    contents = (
-        prompt_templates.get("short_goal", "") + "\n\n"
-        + prompt_templates.get("instructions_for_model", "") + "\n\n"
-        + "Respond with JSON structure like: {\"scenes\": [ {\"title\":\"...\",\"subtitle\":\"...\",\"voice_text\":\"...\",\"duration_seconds\":3 }, ...], \"total_duration\":20 }"
+def request_script_json(client, base_prompt, variation_note=""):
+    """
+    Ask Gemini to produce a JSON script. Returns parsed JSON.
+    If Gemini response cannot be parsed, raises RuntimeError with response text.
+    """
+    system = "You are a professional short-form writer for a motivational channel named 'Sigma Vibes'."
+    prompt = (
+        base_prompt + "\n\n"
+        + "Variation note: " + variation_note + "\n\n"
+        + "IMPORTANT: Return ONLY valid JSON. Example format:\n"
+        + "{\"scenes\": [{\"title\":\"...\",\"subtitle\":\"...\",\"duration_seconds\":3},{...}], \"total_duration\":20}"
     )
 
-    # Use a Gemini text model for content creation
+    # Use the text model
     resp = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=contents
+        contents=prompt
     )
 
-    # The SDK exposes .text for convenience
-    text = resp.text if hasattr(resp, "text") else None
+    # Extract text safely
+    text = None
+    try:
+        text = resp.text if hasattr(resp, "text") and resp.text else None
+    except Exception:
+        pass
+
     if not text:
-        # Fallback: try candidate text
+        # Try candidate path
         try:
             text = resp.candidates[0].content[0].text
         except Exception:
-            raise RuntimeError("Could not get text from Gemini response.")
-    # Parse JSON (model should return JSON)
+            text = None
+
+    if not text:
+        raise RuntimeError("No text returned from Gemini. Response object:\n" + str(resp))
+
+    # Try parse JSON
     try:
-        # Model sometimes returns trailing whitespace/newlines
         payload = json.loads(text.strip())
-    except Exception as e:
-        # try to recover by extracting first {...} block
+        return payload
+    except Exception:
+        # Try to extract first {...} block
         import re
         m = re.search(r"\{.*\}", text, re.DOTALL)
         if not m:
-            raise RuntimeError("Model response was not valid JSON. Raw response:\n" + text)
+            raise RuntimeError("Gemini returned non-JSON and no JSON block. Raw:\n" + text)
         payload = json.loads(m.group(0))
-    return payload
+        return payload
 
-# --- 2) TTS each scene using Gemini native TTS model ---
-def synthesize_scene_audio(client, scene_text, out_wav_path, voice_name="Kore"):
-    # Use TTS preview model (as in docs)
-    model_name = "gemini-2.5-flash-preview-tts"
-    # Call the SDK
-    resp = client.models.generate_content(
-        model=model_name,
-        contents=scene_text,
-        config=types.GenerateContentConfig(
-            response_modalities=["AUDIO"],
-            speech_config=types.SpeechConfig(
-                voice_config=types.VoiceConfig(
-                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                        voice_name=voice_name
-                    )
-                )
-            )
-        )
-    )
-    # Extract base64 or bytes
-    candidate = resp.candidates[0]
-    # Path in the SDK response: candidate.content.parts[0].inline_data.data
-    data = None
-    try:
-        data = candidate.content.parts[0].inline_data.data
-    except Exception:
-        # fallback: string field
-        data = candidate["content"][0]["parts"][0]["inline_data"]["data"]
+# ---------------------------
+# Image generation (text-only visuals)
+# ---------------------------
+def pick_font(size):
+    for p in ASSET_FONTS:
+        if p.exists():
+            try:
+                return ImageFont.truetype(str(p), size)
+            except Exception:
+                continue
+    return ImageFont.load_default()
 
-    # data might already be bytes or a base64 string
-    if isinstance(data, (bytes, bytearray)):
-        pcm = data
-    else:
-        pcm = base64.b64decode(data)
-
-    # The docs indicate PCM16LE s16le at 24000 Hz mono (sample_width=2, rate=24000)
-    rate = 24000
-    channels = 1
-    sample_width = 2
-
-    # Write to a WAV file
-    with wave.open(str(out_wav_path), "wb") as wf:
-        wf.setnchannels(channels)
-        wf.setsampwidth(sample_width)
-        wf.setframerate(rate)
-        wf.writeframes(pcm)
-
-    return str(out_wav_path)
-
-# --- 3) Make an image frame for a scene (title + subtitle) ---
-def make_image_frame(title, subtitle=None, bgcolor=(12,12,12), fontsize=100, subtitle_size=48):
+def make_image_frame(title, subtitle=None, channel_name="Sigma Vibes", bgcolor=(18,18,18)):
+    """
+    Creates an RGB numpy image sized W x H with centered title and subtitle using Pillow textbbox.
+    """
     img = Image.new("RGB", (W, H), color=bgcolor)
     draw = ImageDraw.Draw(img)
 
-    # try to use provided font first
-    font_paths = [
-        "assets/fonts/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-    ]
-    try:
-        font_path = next(p for p in font_paths if Path(p).exists())
-        title_font = ImageFont.truetype(font_path, fontsize)
-        sub_font = ImageFont.truetype(font_path, subtitle_size)
-    except StopIteration:
-        title_font = ImageFont.load_default()
-        sub_font = ImageFont.load_default()
+    # Fonts
+    title_font = pick_font(110)
+    subtitle_font = pick_font(48)
+    watermark_font = pick_font(36)
 
-    # Title can have newlines
+    # Title (allow newlines)
     lines = title.split("\n")
-    y = int(H * 0.18)
+    # start y somewhat upper
+    y = int(H * 0.2)
     for line in lines:
-        w, h = draw.textsize(line, font=title_font)
-        draw.text(((W-w)/2, y), line, font=title_font, fill=(255,255,255))
-        y += h + 8
+        bbox = draw.textbbox((0,0), line, font=title_font)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        draw.text(((W-w)//2, y), line, font=title_font, fill=(255,255,255))
+        y += h + 10
 
+    # Subtitle
     if subtitle:
-        w2, h2 = draw.textsize(subtitle, font=sub_font)
-        draw.text(((W-w2)/2, int(H*0.6)), subtitle, font=sub_font, fill=(220,220,220))
+        bbox = draw.textbbox((0,0), subtitle, font=subtitle_font)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        draw.text(((W-w)//2, int(H*0.62)), subtitle, font=subtitle_font, fill=(200,200,200))
+
+    # Channel watermark bottom-left
+    wm_text = f"@{channel_name.replace(' ', '')}"
+    bbox = draw.textbbox((0,0), wm_text, font=watermark_font)
+    draw.text((30, H - bbox[3] - 30), wm_text, font=watermark_font, fill=(150,150,150))
 
     return np.array(img)
 
-# --- 4) Compose video with moviepy using generated audio and images ---
-def compose_video_from_scenes(scenes, audio_paths, out_video_path, fps=30):
-    # Create image clips
+# ---------------------------
+# Compose video
+# ---------------------------
+def compose_video_from_scenes(scenes, out_path, channel_name="Sigma Vibes", fps=30):
     clips = []
-    for i, scene in enumerate(scenes):
+    for scene in scenes:
         dur = int(scene.get("duration_seconds", 5))
         title = scene.get("title", "")
         subtitle = scene.get("subtitle", "")
-        img_arr = make_image_frame(title, subtitle=subtitle)
+        img_arr = make_image_frame(title, subtitle=subtitle, channel_name=channel_name)
         clip = ImageClip(img_arr).set_duration(dur)
-        # small zoom-in
-        clip = clip.fx(lambda c: c.resize(lambda t: 1 + 0.015 * t))
+        # Slight zoom in effect (using resize lambda)
+        clip = clip.fx(lambda c: c.resize(lambda t: 1 + 0.012 * t))
         clips.append(clip)
-
     video = concatenate_videoclips(clips, method="compose")
-    # Build concatenated audio
-    audio_clips = [AudioFileClip(p) for p in audio_paths]
-    # concatenate AudioFileClip objects
-    combined_audio = None
-    if audio_clips:
-        combined_audio = audio_clips[0]
-        for a in audio_clips[1:]:
-            combined_audio = concatenate_audioclips([combined_audio, a])
-    if combined_audio:
-        combined_audio = combined_audio.set_duration(video.duration)
-        video = video.set_audio(combined_audio)
-
     video = video.set_fps(fps)
-    video.write_videofile(str(out_video_path), codec="libx264", audio_codec="aac", threads=4, bitrate="3500k")
-    return str(out_video_path)
+    # No audio (text-only)
+    video.write_videofile(str(out_path), codec="libx264", audio=False, threads=4, bitrate="3500k")
+    return str(out_path)
 
-# Helper required by compose (moviepy concat of audio)
-from moviepy.editor import concatenate_audioclips
-
-# --- Main flow ---
+# ---------------------------
+# Main
+# ---------------------------
 def main():
     print("[*] Loading prompt templates...")
     prompts = load_prompt_templates()
+    channel_name = prompts.get("channel_name", "Sigma Vibes")
+    base_prompt = prompts.get("short_goal", "") + "\n\n" + prompts.get("instructions_for_model", "")
 
-    print("[*] Creating Gemini client...")
-    client = make_genai_client()
+    # Create client if possible; else fallback to template
+    client = None
+    try:
+        client = make_genai_client()
+    except Exception as e:
+        print("[!] Could not create Gemini client (falling back to local templates). Error:", str(e))
 
-    print("[*] Requesting script JSON from Gemini...")
-    payload = request_script_json(client, prompts)
-    scenes = payload.get("scenes", [])
-    if not scenes:
-        raise RuntimeError("No scenes generated by Gemini.")
-
-    # Ensure durations and sanity checks
-    total_duration = sum(int(s.get("duration_seconds", 5)) for s in scenes)
-    print(f"[+] Received {len(scenes)} scenes, total {total_duration}s.")
-
-    # Create audio files for scenes
-    audio_paths = []
-    for idx, scene in enumerate(scenes):
-        voice_text = scene.get("voice_text") or scene.get("title")
-        out_wav = OUTPUT_DIR / f"scene_{idx+1}.wav"
-        print(f"[*] Synthesizing TTS for scene {idx+1} (duration {scene.get('duration_seconds')}s)...")
-        synth_path = synthesize_scene_audio(client, voice_text, out_wav)
-        audio_paths.append(synth_path)
-
-    # Compose video
+    outputs = []
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    out_mp4 = OUTPUT_DIR / f"sigma_short_{timestamp}.mp4"
-    print("[*] Composing final video with moviepy...")
-    compose_video_from_scenes(scenes, audio_paths, out_mp4)
-    print("[+] Video written to:", out_mp4)
+
+    # We'll generate 2 variations per run
+    for variant_idx in range(1, 3):
+        print(f"[*] Generating script variant {variant_idx}...")
+        variation_note = "Produce a slightly different hook & phrasing (variant #%d)." % variant_idx
+        try:
+            if client:
+                payload = request_script_json(client, base_prompt, variation_note)
+            else:
+                # Fallback: produce a simple template script if no Gemini available
+                print("[!] No Gemini client — using local fallback script.")
+                payload = {
+                    "scenes": [
+                        {"title": "Most Sigma men never share this secret...", "subtitle": "Stay silent. Build quietly.", "duration_seconds": 3},
+                        {"title": "Rule #1\\nFocus > Approval", "subtitle": "Do the work, ignore noise.", "duration_seconds": 8},
+                        {"title": "Follow for daily Sigma rules", "subtitle": "Join the Sigma Vibes squad", "duration_seconds": 4}
+                    ],
+                    "total_duration": 15
+                }
+        except Exception as e:
+            traceback.print_exc()
+            print("[!] Error generating script from Gemini:", e)
+            # Try fallback
+            payload = {
+                "scenes": [
+                    {"title": "Most Sigma men never share this...", "subtitle": "Build silently.", "duration_seconds": 3},
+                    {"title": "Rule #1\\nProtect Your Time", "subtitle": "Say no to distractions.", "duration_seconds": 7},
+                    {"title": "Follow for more", "subtitle": "Daily Sigma rules", "duration_seconds": 4}
+                ], "total_duration": 14
+            }
+
+        scenes = payload.get("scenes", [])
+        if not scenes:
+            print("[!] Generated payload contains no scenes — skipping variant.")
+            continue
+
+        out_mp4 = OUTPUT_DIR / f"sigma_short_var{variant_idx}_{timestamp}.mp4"
+        print(f"[*] Composing video for variant {variant_idx} -> {out_mp4} ...")
+        try:
+            compose_video_from_scenes(scenes, out_mp4, channel_name=channel_name)
+            outputs.append(str(out_mp4))
+            print("[+] Wrote:", out_mp4)
+        except Exception as e:
+            print("[!] Error composing video:", e)
+            traceback.print_exc()
+
+    if outputs:
+        print("[+] Completed. Generated files:")
+        for p in outputs:
+            print("   -", p)
+    else:
+        print("[!] No outputs produced.")
 
 if __name__ == "__main__":
     main()
+
