@@ -15,7 +15,7 @@ VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 FPS = 30
 SCENE_DURATION = 5  # seconds per scene
-MODEL_NAME = "models/gemini-2.0-flash"  # choose from your list_models output
+MODEL_NAME = "models/gemini-2.5-flash"  # choose from your list_models output
 
 # ===============================
 # Configure Gemini
