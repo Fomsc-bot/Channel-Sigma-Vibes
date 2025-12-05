@@ -31,20 +31,20 @@ Generate a YouTube Shorts script with 4 scenes:
 """
 
 # ---------------------------------------------------------
-# Gemini 2.0 Flash client
+# Gemini / Bison client
 # ---------------------------------------------------------
-def configure_gemini():
+def configure_genai():
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("Missing GEMINI_API_KEY in environment variables.")
     genai.configure(api_key=api_key)
 
 # ---------------------------------------------------------
-# Generate script from Gemini
+# Generate script from model
 # ---------------------------------------------------------
 def generate_script():
-    configure_gemini()
-    model_name = "models/gemini-2.0-flash"  # ✅ Must start with "models/"
+    configure_genai()
+    model_name = "models/text-bison-001"  # ✅ Use working model
 
     response = genai.generate_text(
         model=model_name,
@@ -126,7 +126,7 @@ def compose_video(scenes, output_path: Path):
 # MAIN
 # ---------------------------------------------------------
 def main():
-    print("[*] Generating script from Gemini 2.0 Flash...")
+    print("[*] Generating script from model...")
     scenes = generate_script()
     print(f"[+] Received {len(scenes)} scenes.")
 
@@ -139,3 +139,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
