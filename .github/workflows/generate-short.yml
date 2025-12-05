@@ -1,0 +1,38 @@
+name: Generate Sigma Short (Gemini)
+
+on:
+  schedule:
+    - cron: '0 6,18 * * *'  # 06:00 and 18:00 UTC daily (adjust if needed)
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Prepare outputs dir
+        run: mkdir -p outputs
+
+      - name: Run generator (Gemini)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python generate_short_gemini.py
+
+      - name: Upload video artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sigma-short-outputs
+          path: outputs/*.mp4
