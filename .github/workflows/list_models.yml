@@ -1,0 +1,29 @@
+name: List Gemini Models
+
+on:
+  workflow_dispatch:  # Run manually
+  schedule:
+    - cron: '0 0 * * *'  # Optional daily run at midnight UTC
+
+jobs:
+  list_models:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-genai==0.5.0
+
+      - name: Run script
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python list_gemini_models.py
