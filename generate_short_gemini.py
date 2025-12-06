@@ -1,56 +1,101 @@
-from PIL import Image, ImageDraw, ImageFont
 import os
+import subprocess
+from PIL import Image, ImageDraw, ImageFont
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
-OUTPUT_DIR = "outputs"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs("frames", exist_ok=True)
+os.makedirs("outputs", exist_ok=True)
 
-# Your short text
-text = """Stay focused.
-Stay disciplined.
-Stay unstoppable."""
+# ------------------------------
+# Load free HuggingFace model
+# ------------------------------
+print("[*] Loading text model...")
+tokenizer = AutoTokenizer.from_pretrained("gpt2")
+model = AutoModelForCausalLM.from_pretrained("gpt2")
 
-# Video settings
-W, H = 1080, 1920
-FPS = 30
-DURATION = 5  # seconds
-FRAMES = FPS * DURATION
+def generate_script():
+    print("[*] Generating script...")
+    prompt = """Create a short motivational sigma-style script with 3 scenes.
+Each scene should have a title and subtitle. Format:
+Scene 1:
+Title: ...
+Subtitle: ...
 
-# Load a font
-try:
-    FONT = ImageFont.truetype("arial.ttf", 80)
-except:
-    FONT = ImageFont.load_default()
+Scene 2:
+Title: ...
+Subtitle: ...
 
-frames = []
+Scene 3:
+Title: ...
+Subtitle: ...
+"""
+    inputs = tokenizer(prompt, return_tensors="pt")
+    output = model.generate(**inputs, max_new_tokens=200)
+    text = tokenizer.decode(output[0], skip_special_tokens=True)
 
-for i in range(FRAMES):
-    img = Image.new("RGB", (W, H), color=(0, 0, 0))
+    scenes = []
+    for block in text.split("Scene"):
+        if "Title:" in block and "Subtitle:" in block:
+            try:
+                title = block.split("Title:")[1].split("\n")[0].strip()
+                subtitle = block.split("Subtitle:")[1].split("\n")[0].strip()
+                scenes.append({"title": title, "subtitle": subtitle})
+            except:
+                pass
+
+    return scenes[:3]
+
+# ---------------------------------------
+# Create PNG frames for each scene
+# ---------------------------------------
+def create_frame(img_path, title, subtitle):
+    W, H = 1080, 1920
+    img = Image.new("RGB", (W, H), color=(20, 20, 20))
     draw = ImageDraw.Draw(img)
 
-    # Multi-line centered text
-    lines = text.split("\n")
-    total_height = sum([draw.textbbox((0, 0), line, font=FONT)[3] for line in lines])
-    y = (H - total_height) // 2
+    try:
+        font_title = ImageFont.truetype("arial.ttf", 70)
+        font_sub = ImageFont.truetype("arial.ttf", 50)
+    except:
+        font_title = ImageFont.load_default()
+        font_sub = ImageFont.load_default()
 
-    for line in lines:
-        bbox = draw.textbbox((0, 0), line, font=FONT)
-        text_w = bbox[2]
-        text_h = bbox[3]
+    draw.text((50, 600), title, fill="white", font=font_title)
+    draw.text((50, 750), subtitle, fill="white", font=font_sub)
 
-        draw.text(((W - text_w) // 2, y), line, fill="white", font=FONT)
-        y += text_h + 10
+    img.save(img_path)
 
-    frames.append(img)
+# ---------------------------------------
+# Generate 3-second video per scene
+# ---------------------------------------
+def make_video_from_frames():
+    print("[*] Creating MP4 from frames...")
+    output_file = "outputs/sigma_short.mp4"
 
-# Save as MP4 using pillow-av (built into GitHub Actions)
-output_path = os.path.join(OUTPUT_DIR, "short.mp4")
-frames[0].save(
-    output_path,
-    save_all=True,
-    append_images=frames[1:],
-    duration=int(1000 / FPS),
-    loop=0,
-    codec="libx264",
-)
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-framerate", "1",
+        "-i", "frames/frame_%d.png",
+        "-vf", "fps=30",
+        "-pix_fmt", "yuv420p",
+        output_file
+    ]
 
-print("Video saved to:", output_path)
+    subprocess.run(cmd, check=True)
+    print(f"[✔] Video saved to {output_file}")
+
+# ---------------------------------------
+# Main
+# ---------------------------------------
+def main():
+    scenes = generate_script()
+
+    print("[*] Creating image frames...")
+    for i, s in enumerate(scenes):
+        create_frame(f"frames/frame_{i}.png", s["title"], s["subtitle"])
+
+    make_video_from_frames()
+
+if __name__ == "__main__":
+    main()
