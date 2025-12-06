@@ -2,7 +2,7 @@ name: Generate Sigma Shorts (2x daily)
 
 on:
   schedule:
-    - cron: "0 0,12 * * *"   # Runs at 00:00 and 12:00 UTC daily
+    - cron: "0 0,12 * * *"
   workflow_dispatch:
 
 jobs:
@@ -18,18 +18,19 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install system dependencies (FFmpeg)
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          sudo apt-get clean
 
       - name: Install Python dependencies
         run: |
-          pip install --no-cache-dir --upgrade pip
-          pip install --no-cache-dir Pillow torch transformers
+          pip install --upgrade pip
+          pip install pillow
 
       - name: Create outputs directory
-        run: mkdir -p outputs frames
+        run: mkdir -p outputs
 
       - name: Run generator
         run: python generate_short_gemini.py
