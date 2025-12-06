@@ -23,7 +23,7 @@ def generate_scenes():
 
 
 # ---------------------------------------------------------
-# FRAME CREATION USING PILLOW
+# FRAME CREATION USING PILLOW (Pillow 12 compatible)
 # ---------------------------------------------------------
 def create_frame(path, title, subtitle):
     W, H = 1080, 1920
@@ -41,9 +41,16 @@ def create_frame(path, title, subtitle):
         font_title = ImageFont.load_default()
         font_sub = ImageFont.load_default()
 
-    # Calculate text size
-    title_w, title_h = draw.textsize(title, font=font_title)
-    sub_w, sub_h = draw.textsize(subtitle, font=font_sub)
+    # ---- FIX FOR PILLOW 12 (uses textbbox instead of textsize) ----
+    title_bbox = draw.textbbox((0, 0), title, font=font_title)
+    sub_bbox = draw.textbbox((0, 0), subtitle, font=font_sub)
+
+    title_w = title_bbox[2] - title_bbox[0]
+    title_h = title_bbox[3] - title_bbox[1]
+
+    sub_w = sub_bbox[2] - sub_bbox[0]
+    sub_h = sub_bbox[3] - sub_bbox[1]
+    # ---------------------------------------------------------------
 
     # Draw centered title
     draw.text(
@@ -70,9 +77,10 @@ def create_frame(path, title, subtitle):
 def create_video():
     scenes = generate_scenes()
 
-    frames = []
     if not os.path.exists("frames"):
         os.mkdir("frames")
+
+    frames = []
 
     # Create frames
     for i, scene in enumerate(scenes):
@@ -80,11 +88,10 @@ def create_video():
         create_frame(frame_path, scene["title"], scene["subtitle"])
         frames.append(frame_path)
 
-    # Build concat text file for ffmpeg
+    # Build concat file
     concat_file = "frames/concat.txt"
     with open(concat_file, "w") as f:
         for frame in frames:
-            # each frame shows 3 seconds
             f.write(f"file '{os.getcwd()}/{frame}'\n")
             f.write("duration 3\n")
 
