@@ -1,93 +1,83 @@
 #!/usr/bin/env python3
 import os
-import random
 import uuid
 from pathlib import Path
-from moviepy.editor import TextClip, concatenate_videoclips
-from moviepy.video.fx.all import fadein, fadeout
+from random import choice
+from moviepy.editor import TextClip, CompositeVideoClip, ColorClip, concatenate_videoclips
 
 # ===============================
 # CONFIG
 # ===============================
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
-
+QUOTES_FILE = Path("quotes.txt")   # Must exist
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 FPS = 30
 SCENE_DURATION = 5  # seconds per quote
-FADE_DURATION = 0.8  # seconds
-QUOTES_FILE = "quotes.txt"
+FADE_DURATION = 0.5  # seconds for fade in/out
 
 # ===============================
-# UTILITY FUNCTIONS
+# FUNCTIONS
 # ===============================
-def load_quotes(file_path):
-    if not os.path.exists(file_path):
-        print(f"[!] Quotes file '{file_path}' not found.")
-        return []
-    with open(file_path, "r", encoding="utf-8") as f:
-        quotes = [line.strip() for line in f if line.strip()]
-    return quotes
-
-def save_quotes(file_path, quotes):
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(quotes))
-
-def pick_random_quote(quotes):
-    quote = random.choice(quotes)
+def get_random_quote():
+    """Pick a random quote from quotes.txt and remove it from file."""
+    if not QUOTES_FILE.exists():
+        print("[!] Quotes file not found.")
+        return None
+    with open(QUOTES_FILE, "r", encoding="utf-8") as f:
+        quotes = [q.strip() for q in f if q.strip()]
+    if not quotes:
+        print("[!] No more quotes left.")
+        return None
+    quote = choice(quotes)
+    # Remove used quote
     quotes.remove(quote)
+    with open(QUOTES_FILE, "w", encoding="utf-8") as f:
+        f.write("\n".join(quotes))
     return quote
 
-# ===============================
-# VIDEO FUNCTIONS
-# ===============================
-def create_text_clip(text, duration=SCENE_DURATION):
-    clip = TextClip(
-        text,
-        fontsize=80,
+def create_scene_clip(quote):
+    """Create a single scene with text on a gradient background and fade-in/out."""
+    # Gradient background (dark at top -> lighter at bottom)
+    bg = ColorClip(size=(VIDEO_WIDTH, VIDEO_HEIGHT), color=(30, 30, 30), duration=SCENE_DURATION)
+
+    # Create text clip
+    txt_clip = TextClip(
+        txt=quote,
+        fontsize=70,
         color="white",
         font="Arial-Bold",
-        size=(VIDEO_WIDTH, VIDEO_HEIGHT),
         method="caption",
+        size=(VIDEO_WIDTH - 100, VIDEO_HEIGHT - 200),
         align="center"
-    ).set_duration(duration)
+    ).set_duration(SCENE_DURATION)
 
-    clip = fadein(clip, FADE_DURATION)
-    clip = fadeout(clip, FADE_DURATION)
-    return clip
+    # Add fade-in/out
+    txt_clip = txt_clip.fadein(FADE_DURATION).fadeout(FADE_DURATION)
+    scene = CompositeVideoClip([bg, txt_clip.set_position("center")])
+    return scene
 
-def create_video(quotes, num_scenes=5):
-    if len(quotes) < num_scenes:
-        num_scenes = len(quotes)
-    
-    clips = []
+def create_video(num_scenes=3):
+    """Generate the final video from quotes."""
+    scenes = []
     for _ in range(num_scenes):
-        quote = pick_random_quote(quotes)
-        clip = create_text_clip(quote)
-        clips.append(clip)
-    
-    final_video = concatenate_videoclips(clips)
+        quote = get_random_quote()
+        if not quote:
+            break
+        clip = create_scene_clip(quote)
+        scenes.append(clip)
+    if not scenes:
+        print("[!] No scenes generated.")
+        return
+
+    final_video = concatenate_videoclips(scenes)
     filename = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
     final_video.write_videofile(str(filename), fps=FPS)
     print(f"[+] Video saved to {filename}")
-    return filename
 
 # ===============================
 # MAIN
 # ===============================
-def main():
-    quotes = load_quotes(QUOTES_FILE)
-    if not quotes:
-        print("[!] No quotes available to generate video.")
-        return
-
-    NUM_SCENES = 5
-    print(f"[*] Generating video with {NUM_SCENES} quotes...")
-    create_video(quotes, NUM_SCENES)
-    save_quotes(QUOTES_FILE, quotes)
-    print("[*] Remaining quotes saved.")
-
 if __name__ == "__main__":
-    main()
-
+    create_video(num_scenes=3)  # Change the number of quotes/scenes per short if needed
