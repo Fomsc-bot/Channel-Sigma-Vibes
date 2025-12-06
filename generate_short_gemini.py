@@ -4,7 +4,8 @@ import json
 import uuid
 from pathlib import Path
 from moviepy.editor import TextClip, concatenate_videoclips
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 
 # ===============================
 # CONFIG
@@ -15,24 +16,13 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 FPS = 30
-SCENE_DURATION = 5  # seconds per scene
+SCENE_DURATION = 5
 
-MODEL_NAME = "tiiuae/falcon-7b-instruct"  # free Hugging Face model
+MODEL_NAME = "google/flan-t5-small"   # small + free
 
-# ===============================
-# Load model
-# ===============================
-print("[*] Loading Hugging Face model...")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
-generator = pipeline("text-generation", model=model, tokenizer=tokenizer)
-
-# ===============================
-# Prompt
-# ===============================
 PROMPT = """
 Generate 3 motivational Sigma mindset rules for a YouTube Short.
-Output JSON like this:
+Return JSON ONLY like this:
 {
   "scenes": [
     {"title": "Scene 1 title", "subtitle": "Scene 1 subtitle"},
@@ -43,22 +33,38 @@ Output JSON like this:
 """
 
 # ===============================
+# Load Model
+# ===============================
+print("[*] Loading Hugging Face model...")
+
+generator = pipeline(
+    "text2text-generation",
+    model=MODEL_NAME,
+    tokenizer=MODEL_NAME
+)
+
+# ===============================
 # Generate script
 # ===============================
+
 def generate_script():
-    print("[*] Generating script from Hugging Face model...")
+    print("[*] Generating script...")
+
+    output = generator(
+        PROMPT,
+        max_length=300
+    )[0]["generated_text"]
+
     try:
-        output = generator(PROMPT, max_length=512, do_sample=True, temperature=0.7)[0]["generated_text"]
         data = json.loads(output)
-        scenes = data.get("scenes", [])
-        return scenes
-    except Exception as e:
-        print("[!] Hugging Face generation error:", e)
-        print("[!] Generated text was:\n", output if 'output' in locals() else "")
+        return data.get("scenes", [])
+    except Exception:
+        print("[!] Model returned invalid JSON:")
+        print(output)
         return []
 
 # ===============================
-# Compose video
+# Create video clips
 # ===============================
 def create_scene_clip(title, subtitle, duration=SCENE_DURATION):
     txt = f"{title}\n{subtitle}"
@@ -70,34 +76,30 @@ def create_scene_clip(title, subtitle, duration=SCENE_DURATION):
         method="caption",
         align="center",
         font="Arial-Bold"
-    )
-    clip = clip.set_duration(duration)
+    ).set_duration(duration)
     return clip
 
 def compose_video(scenes):
-    clips = []
-    for scene in scenes:
-        title = scene.get("title", "")
-        subtitle = scene.get("subtitle", "")
-        clip = create_scene_clip(title, subtitle)
-        clips.append(clip)
-    final_video = concatenate_videoclips(clips)
-    return final_video
+    clips = [create_scene_clip(s["title"], s["subtitle"]) for s in scenes]
+    return concatenate_videoclips(clips)
 
 # ===============================
 # Main
 # ===============================
+
 def main():
     scenes = generate_script()
     if not scenes:
         print("[!] No scenes generated.")
         return
 
-    print(f"[*] Composing video with {len(scenes)} scenes...")
+    print(f"[*] Creating video with {len(scenes)} scenes...")
+
     video = compose_video(scenes)
     filename = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
+
     video.write_videofile(str(filename), fps=FPS)
-    print(f"[+] Video saved to {filename}")
+    print(f"[+] Saved to {filename}")
 
 if __name__ == "__main__":
     main()
