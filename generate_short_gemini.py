@@ -3,7 +3,8 @@ import os
 import random
 import uuid
 from pathlib import Path
-from moviepy import editor as mpy
+from moviepy.video.VideoClip import TextClip
+from moviepy.video.compositing.concatenate import concatenate_videoclips
 from moviepy.video.fx.all import fadein, fadeout
 
 # ===============================
@@ -43,7 +44,7 @@ def pick_random_quote(quotes):
 # VIDEO FUNCTIONS
 # ===============================
 def create_text_clip(text, duration=SCENE_DURATION):
-    clip = mpy.TextClip(
+    clip = TextClip(
         text,
         fontsize=80,
         color="white",
@@ -67,7 +68,7 @@ def create_video(quotes, num_scenes=5):
         clip = create_text_clip(quote)
         clips.append(clip)
     
-    final_video = mpy.concatenate_videoclips(clips)
+    final_video = concatenate_videoclips(clips)
     filename = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
     final_video.write_videofile(str(filename), fps=FPS)
     print(f"[+] Video saved to {filename}")
