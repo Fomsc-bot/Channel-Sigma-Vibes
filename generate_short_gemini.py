@@ -18,14 +18,14 @@ FPS = 30
 SCENE_DURATION = 5
 
 HF_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
-HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
-HF_TOKEN = os.getenv("HF_TOKEN")  # optional but recommended
+HF_API_URL = "https://router.huggingface.co/text-generation"  # NEW API
 
+HF_TOKEN = os.getenv("HF_TOKEN")  # optional
 HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
 
 PROMPT = """
 Generate exactly 3 motivational Sigma mindset rules for a YouTube Short.
-Return only valid JSON:
+Return only valid JSON in this structure:
 
 {
   "scenes": [
@@ -37,15 +37,20 @@ Return only valid JSON:
 """
 
 # =============================
-# HF Inference API
+# Hugging Face API
 # =============================
 def generate_text():
+    print("[*] Contacting HF Router API...")
+
     payload = {
+        "model": HF_MODEL,
         "inputs": PROMPT,
-        "parameters": {"max_new_tokens": 200}
+        "parameters": {
+            "max_new_tokens": 200,
+            "temperature": 0.7
+        }
     }
 
-    print("[*] Contacting Hugging Face Inference API...")
     response = requests.post(HF_API_URL, headers=HEADERS, json=payload)
 
     if response.status_code != 200:
@@ -53,13 +58,13 @@ def generate_text():
         return ""
 
     try:
-        return response.json()[0]["generated_text"]
+        return response.json()["generated_text"]
     except Exception:
-        print("[!] HF API returned unexpected format:", response.text)
+        print("[!] Unexpected format from HF:", response.text)
         return ""
 
 # =============================
-# Parse Script
+# Parse JSON scenes
 # =============================
 def generate_script():
     text = generate_text()
@@ -69,8 +74,8 @@ def generate_script():
     try:
         data = json.loads(text)
         return data.get("scenes", [])
-    except Exception:
-        print("[!] Invalid JSON returned:")
+    except:
+        print("[!] Could not parse returned text as JSON:")
         print(text)
         return []
 
@@ -92,24 +97,27 @@ def create_scene_clip(title, subtitle, duration=SCENE_DURATION):
     )
 
 def compose_video(scenes):
-    return concatenate_videoclips([
-        create_scene_clip(s["title"], s["subtitle"]) for s in scenes
-    ])
+    clips = [create_scene_clip(s["title"], s["subtitle"]) for s in scenes]
+    return concatenate_videoclips(clips)
 
 # =============================
 # Main
 # =============================
 def main():
     scenes = generate_script()
+
     if not scenes:
         print("[!] No scenes generated.")
         return
 
+    print(f"[*] Creating video with {len(scenes)} scenes...")
+
     video = compose_video(scenes)
     file = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
-    video.write_videofile(str(file), fps=FPS)
 
+    video.write_videofile(str(file), fps=FPS)
     print("[+] Saved:", file)
+
 
 if __name__ == "__main__":
     main()
