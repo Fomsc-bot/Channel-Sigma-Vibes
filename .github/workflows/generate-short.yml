@@ -2,7 +2,7 @@ name: Generate Sigma Shorts (2x daily)
 
 on:
   schedule:
-    - cron: "0 0,12 * * *"
+    - cron: '0 0,12 * * *'   # Runs at 00:00 and 12:00 UTC daily
   workflow_dispatch:
 
 jobs:
@@ -21,13 +21,18 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          sudo apt-get install -y ffmpeg libsm6 libxext6 fonts-dejavu-core
           sudo apt-get clean
 
-      - name: Install Python dependencies
+      - name: Upgrade pip and install Python dependencies
         run: |
-          pip install --upgrade pip
-          pip install pillow
+          python -m pip install --upgrade pip setuptools wheel
+          pip install --no-cache-dir moviepy imageio imageio-ffmpeg Pillow
+
+      - name: Verify moviepy installation
+        run: |
+          python -m pip show moviepy
+          python -c "import moviepy.editor"
 
       - name: Create outputs directory
         run: mkdir -p outputs
