@@ -6,7 +6,6 @@ from pathlib import Path
 import random
 import uuid
 import time
-import os
 
 # ===============================
 # CONFIG
@@ -16,19 +15,18 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 FPS = 30
-VIDEO_DURATION = 10  # seconds per video
+SCENE_DURATION = 5  # seconds
 QUOTE_FILE = "quotes.txt"  # txt file with one quote per line
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_SIZE = 80
-FADE_FRAMES = 20  # fade in/out frames
-MUSIC_FILE = "music.mp3"  # Creative Commons background music
+FADE_FRAMES = 15  # frames for fade in/out
 
 # ===============================
 # FUNCTIONS
 # ===============================
 
 def load_quote():
-    """Load a single random quote and remove it from the file."""
+    """Load a random quote from the txt file and remove it to avoid reuse."""
     if not Path(QUOTE_FILE).exists():
         raise FileNotFoundError(f"{QUOTE_FILE} not found.")
     
@@ -52,15 +50,16 @@ def create_animated_background(frame_num, total_frames):
     img = np.zeros((VIDEO_HEIGHT, VIDEO_WIDTH, 3), dtype=np.uint8)
     
     # Gradient background
-    gradient = np.linspace(50, 200, VIDEO_HEIGHT).astype(np.uint8)
-    img[:, :, 0] = gradient  # Blue channel
-    img[:, :, 1] = np.flip(gradient)  # Green channel
-    img[:, :, 2] = 150  # Fixed Red
+    gradient = np.linspace(50, 200, VIDEO_HEIGHT, dtype=np.uint8)
+    gradient_2d = np.tile(gradient[:, np.newaxis], (1, VIDEO_WIDTH))
+    img[:, :, 0] = gradient_2d                     # Blue
+    img[:, :, 1] = np.flip(gradient_2d, axis=0)   # Green
+    img[:, :, 2] = 150                             # Red fixed
     
-    # Moving circles animation
+    # Moving circles
     num_circles = 5
     for i in range(num_circles):
-        radius = 50 + (i * 20)
+        radius = 50 + (i * 15)
         center_x = int((VIDEO_WIDTH / num_circles) * i + (frame_num * 5) % VIDEO_WIDTH)
         center_y = int((VIDEO_HEIGHT / num_circles) * i + (frame_num * 3) % VIDEO_HEIGHT)
         color = (np.random.randint(100,255), np.random.randint(100,255), np.random.randint(100,255))
@@ -68,91 +67,76 @@ def create_animated_background(frame_num, total_frames):
     
     return img
 
-def draw_text(frame, text, frame_num, total_frames):
-    """Draw text with slide-in / typewriter effect."""
-    pil_img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    draw = ImageDraw.Draw(pil_img)
+def create_text_frame(text, frame_num, total_frames):
+    """Draw text with slide-in effect on background."""
+    bg = create_animated_background(frame_num, total_frames)
+    img = Image.fromarray(bg)
+    draw = ImageDraw.Draw(img)
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
-
+    
     # Wrap text
     lines = []
     words = text.split()
     while words:
         line = ""
-        while words and draw.textbbox((0,0), line + words[0], font=font)[2] < VIDEO_WIDTH*0.9:
+        while words and draw.textbbox((0,0), line + words[0], font=font)[2] < VIDEO_WIDTH * 0.8:
             line += (words.pop(0) + " ")
         lines.append(line.strip())
-
+    
+    # Compute vertical start
     total_height = sum([draw.textbbox((0,0), line, font=font)[3] for line in lines])
     y = (VIDEO_HEIGHT - total_height) // 2
-
-    # Typewriter effect: show characters progressively
-    char_count = int(len(text) * frame_num / total_frames)
-    text_to_show = text[:char_count]
-
-    # Re-wrap text based on typewriter progress
-    lines2 = []
-    words = text_to_show.split()
-    while words:
-        line = ""
-        while words and draw.textbbox((0,0), line + words[0], font=font)[2] < VIDEO_WIDTH*0.9:
-            line += (words.pop(0) + " ")
-        lines2.append(line.strip())
     
-    # Draw each line
-    y = (VIDEO_HEIGHT - sum([draw.textbbox((0,0), l, font=font)[3] for l in lines2])) // 2
-    for line in lines2:
+    # Slide-in from left effect
+    progress = min(1.0, frame_num / FADE_FRAMES)
+    x_offset = int((1.0 - progress) * VIDEO_WIDTH // 2)
+    
+    for line in lines:
         bbox = draw.textbbox((0,0), line, font=font)
         w = bbox[2] - bbox[0]
         h = bbox[3] - bbox[1]
-        x = (VIDEO_WIDTH - w) // 2
-        draw.text((x, y), line, font=font, fill=(255, 255, 255))
+        x = (VIDEO_WIDTH - w) // 2 - x_offset
+        draw.text((x, y), line, font=font, fill=(255,255,255))
         y += h
+    
+    return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
-    return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-
-def add_fade_in_out(frames, fade_frames=FADE_FRAMES):
-    """Apply fade-in and fade-out effect to frames."""
-    total = len(frames)
-    for i in range(total):
-        alpha = 1.0
-        if i < fade_frames:
-            alpha = i / fade_frames
-        elif i > total - fade_frames:
-            alpha = (total - i) / fade_frames
-        overlay = np.zeros_like(frames[i])
-        cv2.addWeighted(frames[i], alpha, overlay, 1-alpha, 0, frames[i])
-    return frames
+def add_fade(frames):
+    """Apply fade-in/out effect."""
+    total_frames = len(frames)
+    faded = []
+    for i, frame in enumerate(frames):
+        overlay = np.zeros_like(frame)
+        # fade-in
+        alpha_in = min(1.0, (i+1)/FADE_FRAMES)
+        # fade-out
+        alpha_out = min(1.0, (total_frames-i)/FADE_FRAMES)
+        alpha = min(alpha_in, alpha_out)
+        blended = cv2.addWeighted(frame, alpha, overlay, 1-alpha, 0)
+        faded.append(blended)
+    return faded
 
 def create_video():
-    """Generate a short video with one quote."""
+    """Create a single-quote video with animated background and dynamic text."""
     quote = load_quote()
-    total_frames = VIDEO_DURATION * FPS
+    total_frames = SCENE_DURATION * FPS
     frames = []
-
     for i in range(total_frames):
-        bg = create_animated_background(i, total_frames)
-        frame = draw_text(bg, quote, i, total_frames)
+        frame = create_text_frame(quote, i, total_frames)
         frames.append(frame)
-
-    frames = add_fade_in_out(frames)
-
+    
+    frames = add_fade(frames)
+    
     filename = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(str(filename), fourcc, FPS, (VIDEO_WIDTH, VIDEO_HEIGHT))
-
+    
     for frame in frames:
         out.write(frame)
     out.release()
     
-    # Optional: Add background music using ffmpeg if MUSIC_FILE exists
-    if os.path.exists(MUSIC_FILE):
-        temp_file = filename.with_suffix(".tmp.mp4")
-        cmd = f'ffmpeg -y -i "{filename}" -i "{MUSIC_FILE}" -c copy -map 0:v:0 -map 1:a:0 -shortest "{temp_file}"'
-        os.system(cmd)
-        os.rename(temp_file, filename)
-    
     print(f"[+] Video saved to {filename}")
+    print(f"[+] Quote used: {quote}")
 
 # ===============================
 # MAIN
