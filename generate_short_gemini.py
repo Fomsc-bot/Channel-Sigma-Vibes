@@ -1,126 +1,112 @@
 #!/usr/bin/env python3
-import os
-import uuid
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
-from random import choice
+import random
+import uuid
+import time
 
 # ===============================
 # CONFIG
 # ===============================
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
-QUOTES_FILE = Path("quotes.txt")
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 FPS = 30
-SCENE_DURATION = 5  # seconds per quote
-FADE_DURATION = 1.0  # seconds for fade in/out
-FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"  # default Linux font
+SCENE_DURATION = 5  # seconds per scene
+QUOTE_FILE = "quotes.txt"  # txt file with one quote per line
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FONT_SIZE = 80
+FADE_FRAMES = 15  # number of frames for fade in/out
 
 # ===============================
-# FUNCTIONS
+# Functions
 # ===============================
-def get_random_quote():
-    if not QUOTES_FILE.exists():
-        print("[!] Quotes file not found.")
-        return None
-    with open(QUOTES_FILE, "r", encoding="utf-8") as f:
-        quotes = [q.strip() for q in f if q.strip()]
+def load_quote():
+    """Load a random quote from the txt file and remove it."""
+    if not Path(QUOTE_FILE).exists():
+        raise FileNotFoundError(f"{QUOTE_FILE} not found.")
+    
+    with open(QUOTE_FILE, "r") as f:
+        quotes = [line.strip() for line in f if line.strip()]
+    
     if not quotes:
-        print("[!] No more quotes left.")
-        return None
-    quote = choice(quotes)
+        raise ValueError("No quotes left in the file.")
+    
+    quote = random.choice(quotes)
     quotes.remove(quote)
-    with open(QUOTES_FILE, "w", encoding="utf-8") as f:
-        f.write("\n".join(quotes))
+    
+    with open(QUOTE_FILE, "w") as f:
+        for q in quotes:
+            f.write(q + "\n")
+    
     return quote
 
 def create_frame(text):
-    """Create a single PIL image with centered text and gradient background."""
-    img = Image.new("RGB", (VIDEO_WIDTH, VIDEO_HEIGHT))
+    """Create a single frame with fade-in effect."""
+    # Create blank image
+    img = Image.new("RGB", (VIDEO_WIDTH, VIDEO_HEIGHT), color=(0, 0, 0))
     draw = ImageDraw.Draw(img)
-
-    # Gradient background
-    for y in range(VIDEO_HEIGHT):
-        r = int(20 + (y / VIDEO_HEIGHT) * 40)
-        g = int(20 + (y / VIDEO_HEIGHT) * 40)
-        b = int(20 + (y / VIDEO_HEIGHT) * 40)
-        draw.line([(0, y), (VIDEO_WIDTH, y)], fill=(r, g, b))
-
-    # Load font
-    font_size = 80
-    font = ImageFont.truetype(FONT_PATH, font_size)
-
-    # Wrap text
+    font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
+    
+    # Wrap text manually
     lines = []
     words = text.split()
-    line = ""
-    for word in words:
-        test_line = f"{line} {word}".strip()
-        w, h = draw.textsize(test_line, font=font)
-        if w > VIDEO_WIDTH - 100:
-            lines.append(line)
-            line = word
-        else:
-            line = test_line
-    lines.append(line)
-
-    # Draw text
-    total_h = len(lines) * font_size + (len(lines)-1)*10
-    y_text = (VIDEO_HEIGHT - total_h) // 2
+    while words:
+        line = ""
+        while words and draw.textbbox((0,0), line + words[0], font=font)[2] < VIDEO_WIDTH * 0.9:
+            line += (words.pop(0) + " ")
+        lines.append(line.strip())
+    
+    # Draw multiline text centered
+    total_height = sum([draw.textbbox((0,0), line, font=font)[3] for line in lines])
+    y = (VIDEO_HEIGHT - total_height) // 2
     for line in lines:
-        w, h = draw.textsize(line, font=font)
-        x_text = (VIDEO_WIDTH - w) // 2
-        draw.text((x_text, y_text), line, font=font, fill=(255, 255, 255))
-        y_text += font_size + 10
+        bbox = draw.textbbox((0,0), line, font=font)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        x = (VIDEO_WIDTH - w) // 2
+        draw.text((x, y), line, font=font, fill=(255, 255, 255))
+        y += h
 
-    return np.array(img)
+    return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+
+def add_fade(frames, fade_frames=FADE_FRAMES):
+    """Apply fade in effect to frames."""
+    faded = []
+    for i in range(len(frames)):
+        frame = frames[i].copy()
+        alpha = min(1.0, (i + 1) / fade_frames)
+        overlay = np.zeros_like(frame)
+        cv2.addWeighted(frame, alpha, overlay, 1 - alpha, 0, frame)
+        faded.append(frame)
+    return faded
 
 def create_video(num_scenes=3):
-    scenes = []
+    """Generate video with quotes."""
+    frames = []
     for _ in range(num_scenes):
-        quote = get_random_quote()
-        if not quote:
-            break
-        scenes.append(quote)
-
-    if not scenes:
-        print("[!] No quotes to generate video.")
-        return
-
+        quote = load_quote()
+        frame = create_frame(quote)
+        # Repeat frame for duration
+        for _ in range(FPS * SCENE_DURATION):
+            frames.append(frame.copy())
+    
+    frames = add_fade(frames)
+    
     filename = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(str(filename), fourcc, FPS, (VIDEO_WIDTH, VIDEO_HEIGHT))
-
-    for quote in scenes:
-        frame = create_frame(quote)
-        fade_frames = int(FADE_DURATION * FPS)
-        scene_frames = int(SCENE_DURATION * FPS)
-
-        # Fade-in
-        for i in range(fade_frames):
-            alpha = i / fade_frames
-            out_frame = (frame * alpha).astype(np.uint8)
-            out.write(out_frame)
-
-        # Full scene
-        for _ in range(scene_frames - 2*fade_frames):
-            out.write(frame)
-
-        # Fade-out
-        for i in range(fade_frames):
-            alpha = 1 - (i / fade_frames)
-            out_frame = (frame * alpha).astype(np.uint8)
-            out.write(out_frame)
-
+    
+    for frame in frames:
+        out.write(frame)
     out.release()
     print(f"[+] Video saved to {filename}")
 
 # ===============================
-# MAIN
+# Main
 # ===============================
 if __name__ == "__main__":
     create_video(num_scenes=3)
