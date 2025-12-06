@@ -6,3 +6,5 @@ numpy>=1.26.0
 imageio
 imageio-ffmpeg
 numpy
+opencv-python-headless
+Pillow
