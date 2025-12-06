@@ -8,3 +8,6 @@ imageio-ffmpeg
 numpy
 opencv-python-headless
 Pillow
+numpy
+opencv-python-headless
+Pillow
