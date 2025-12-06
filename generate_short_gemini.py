@@ -2,14 +2,13 @@
 import os
 import json
 import uuid
+import requests
 from pathlib import Path
 from moviepy.editor import TextClip, concatenate_videoclips
 
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
-
-# ===============================
+# =============================
 # CONFIG
-# ===============================
+# =============================
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -18,11 +17,16 @@ VIDEO_HEIGHT = 1920
 FPS = 30
 SCENE_DURATION = 5
 
-MODEL_NAME = "google/flan-t5-small"   # small + free
+HF_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+HF_TOKEN = os.getenv("HF_TOKEN")  # optional but recommended
+
+HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
 
 PROMPT = """
-Generate 3 motivational Sigma mindset rules for a YouTube Short.
-Return JSON ONLY like this:
+Generate exactly 3 motivational Sigma mindset rules for a YouTube Short.
+Return only valid JSON:
+
 {
   "scenes": [
     {"title": "Scene 1 title", "subtitle": "Scene 1 subtitle"},
@@ -32,74 +36,80 @@ Return JSON ONLY like this:
 }
 """
 
-# ===============================
-# Load Model
-# ===============================
-print("[*] Loading Hugging Face model...")
+# =============================
+# HF Inference API
+# =============================
+def generate_text():
+    payload = {
+        "inputs": PROMPT,
+        "parameters": {"max_new_tokens": 200}
+    }
 
-generator = pipeline(
-    "text2text-generation",
-    model=MODEL_NAME,
-    tokenizer=MODEL_NAME
-)
+    print("[*] Contacting Hugging Face Inference API...")
+    response = requests.post(HF_API_URL, headers=HEADERS, json=payload)
 
-# ===============================
-# Generate script
-# ===============================
-
-def generate_script():
-    print("[*] Generating script...")
-
-    output = generator(
-        PROMPT,
-        max_length=300
-    )[0]["generated_text"]
+    if response.status_code != 200:
+        print("[!] HF API Error:", response.text)
+        return ""
 
     try:
-        data = json.loads(output)
-        return data.get("scenes", [])
+        return response.json()[0]["generated_text"]
     except Exception:
-        print("[!] Model returned invalid JSON:")
-        print(output)
+        print("[!] HF API returned unexpected format:", response.text)
+        return ""
+
+# =============================
+# Parse Script
+# =============================
+def generate_script():
+    text = generate_text()
+    if not text:
         return []
 
-# ===============================
-# Create video clips
-# ===============================
+    try:
+        data = json.loads(text)
+        return data.get("scenes", [])
+    except Exception:
+        print("[!] Invalid JSON returned:")
+        print(text)
+        return []
+
+# =============================
+# Video builder
+# =============================
 def create_scene_clip(title, subtitle, duration=SCENE_DURATION):
     txt = f"{title}\n{subtitle}"
-    clip = TextClip(
-        txt,
-        fontsize=80,
-        color="white",
-        size=(VIDEO_WIDTH, VIDEO_HEIGHT),
-        method="caption",
-        align="center",
-        font="Arial-Bold"
-    ).set_duration(duration)
-    return clip
+    return (
+        TextClip(
+            txt,
+            fontsize=80,
+            color="white",
+            size=(VIDEO_WIDTH, VIDEO_HEIGHT),
+            method="caption",
+            align="center",
+            font="Arial-Bold"
+        ).set_duration(duration)
+    )
 
 def compose_video(scenes):
-    clips = [create_scene_clip(s["title"], s["subtitle"]) for s in scenes]
-    return concatenate_videoclips(clips)
+    return concatenate_videoclips([
+        create_scene_clip(s["title"], s["subtitle"]) for s in scenes
+    ])
 
-# ===============================
+# =============================
 # Main
-# ===============================
-
+# =============================
 def main():
     scenes = generate_script()
     if not scenes:
         print("[!] No scenes generated.")
         return
 
-    print(f"[*] Creating video with {len(scenes)} scenes...")
-
     video = compose_video(scenes)
-    filename = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
+    file = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
+    video.write_videofile(str(file), fps=FPS)
 
-    video.write_videofile(str(filename), fps=FPS)
-    print(f"[+] Saved to {filename}")
+    print("[+] Saved:", file)
 
 if __name__ == "__main__":
     main()
