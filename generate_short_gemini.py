@@ -1,120 +1,130 @@
 import os
 import random
+from moviepy.editor import *
 from PIL import Image, ImageDraw, ImageFont
-import subprocess
 
-# ---------------------------------------------------------
-# SIMPLE TEXT GENERATION (free, local)
-# ---------------------------------------------------------
-PROMPTS = [
-    ("THE GRIND NEVER STOPS", "Winners work in silence."),
-    ("BE UNSTOPPABLE", "Let your actions talk."),
-    ("FOCUS ON YOURSELF", "The world follows those who don’t wait."),
-    ("KEEP MOVING", "Small steps create big change."),
-    ("NO EXCUSES", "Discipline beats motivation."),
-]
+# -------------------------
+# CONFIGURATION
+# -------------------------
+WIDTH = 1080
+HEIGHT = 1920
+BG_COLOR = (10, 10, 10)
+TEXT_COLOR = "white"
+FONT_TITLE = "DejaVuSans-Bold.ttf"      # GitHub Actions safe font
+FONT_SIZE_TITLE = 80
+DURATION = 6                             # seconds
+FADE_DURATION = 1.2                      # text fade-in
 
-def generate_scenes():
-    scenes = []
-    for _ in range(3):
-        title, subtitle = random.choice(PROMPTS)
-        scenes.append({"title": title, "subtitle": subtitle})
-    return scenes
+QUOTES_FILE = "quotes.txt"
+OUTPUT_DIR = "outputs"
 
 
-# ---------------------------------------------------------
-# FRAME CREATION USING PILLOW (Pillow 12 compatible)
-# ---------------------------------------------------------
-def create_frame(path, title, subtitle):
-    W, H = 1080, 1920
-    img = Image.new("RGB", (W, H), color=(20, 20, 20))
+# -------------------------
+# Read a quote + delete it so it won't repeat
+# -------------------------
+def get_unique_quote():
+    if not os.path.exists(QUOTES_FILE):
+        raise FileNotFoundError("quotes.txt not found! Add it to the repo.")
+
+    with open(QUOTES_FILE, "r", encoding="utf-8") as f:
+        quotes = [q.strip() for q in f.readlines() if q.strip()]
+
+    if not quotes:
+        raise ValueError("No quotes left in quotes.txt")
+
+    quote = random.choice(quotes)
+    quotes.remove(quote)
+
+    # Write back remaining quotes
+    with open(QUOTES_FILE, "w", encoding="utf-8") as f:
+        for q in quotes:
+            f.write(q + "\n")
+
+    return quote
+
+
+# -------------------------
+# Create ONE frame with text
+# -------------------------
+def generate_frame(quote, frame_path):
+    img = Image.new("RGB", (WIDTH, HEIGHT), BG_COLOR)
     draw = ImageDraw.Draw(img)
 
-    FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-
-    # Load fonts
+    # Load font
     try:
-        font_title = ImageFont.truetype(FONT_PATH, 110)
-        font_sub = ImageFont.truetype(FONT_PATH, 70)
-    except Exception as e:
-        print("Font load failed, using default:", e)
-        font_title = ImageFont.load_default()
-        font_sub = ImageFont.load_default()
+        font = ImageFont.truetype(FONT_TITLE, FONT_SIZE_TITLE)
+    except:
+        font = ImageFont.load_default()
 
-    # ---- FIX FOR PILLOW 12 (uses textbbox instead of textsize) ----
-    title_bbox = draw.textbbox((0, 0), title, font=font_title)
-    sub_bbox = draw.textbbox((0, 0), subtitle, font=font_sub)
+    # Text box wrap
+    max_width = WIDTH - 200
+    words = quote.split()
+    lines = []
+    line = ""
 
-    title_w = title_bbox[2] - title_bbox[0]
-    title_h = title_bbox[3] - title_bbox[1]
+    for word in words:
+        test_line = line + word + " "
+        w, _ = draw.textbbox((0, 0), test_line, font=font)[2:]
+        if w <= max_width:
+            line = test_line
+        else:
+            lines.append(line)
+            line = word + " "
+    lines.append(line)
 
-    sub_w = sub_bbox[2] - sub_bbox[0]
-    sub_h = sub_bbox[3] - sub_bbox[1]
-    # ---------------------------------------------------------------
+    # Center vertically
+    total_h = len(lines) * (FONT_SIZE_TITLE + 20)
+    y = (HEIGHT - total_h) // 2
 
-    # Draw centered title
-    draw.text(
-        ((W - title_w) / 2, 650),
-        title,
-        fill="white",
-        font=font_title
-    )
+    # Draw each line
+    for line in lines:
+        w, h = draw.textbbox((0, 0), line, font=font)[2:]
+        x = (WIDTH - w) // 2
+        draw.text((x, y), line, fill=TEXT_COLOR, font=font)
+        y += FONT_SIZE_TITLE + 20
 
-    # Draw centered subtitle
-    draw.text(
-        ((W - sub_w) / 2, 850),
-        subtitle,
-        fill="white",
-        font=font_sub
-    )
-
-    img.save(path)
+    img.save(frame_path)
 
 
-# ---------------------------------------------------------
-# VIDEO CREATION USING FFMPEG
-# ---------------------------------------------------------
+# -------------------------
+# Create final video
+# -------------------------
 def create_video():
-    scenes = generate_scenes()
+    if not os.path.exists(OUTPUT_DIR):
+        os.makedirs(OUTPUT_DIR)
 
-    if not os.path.exists("frames"):
-        os.mkdir("frames")
+    quote = get_unique_quote()
+    frame_path = "frame.png"
 
-    frames = []
+    print("Using quote:", quote)
 
-    # Create frames
-    for i, scene in enumerate(scenes):
-        frame_path = f"frames/frame_{i}.png"
-        create_frame(frame_path, scene["title"], scene["subtitle"])
-        frames.append(frame_path)
+    # Create still image
+    generate_frame(quote, frame_path)
 
-    # Build concat file
-    concat_file = "frames/concat.txt"
-    with open(concat_file, "w") as f:
-        for frame in frames:
-            f.write(f"file '{os.getcwd()}/{frame}'\n")
-            f.write("duration 3\n")
+    # Load image into video
+    clip = ImageClip(frame_path).set_duration(DURATION)
 
-    output_path = "outputs/sigma_short.mp4"
+    # Add fade-in
+    clip = clip.fadein(FADE_DURATION)
 
-    # Render video
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", concat_file,
-        "-vf", "fps=30",
-        "-pix_fmt", "yuv420p",
-        output_path
-    ])
+    # Slight zoom animation (for engagement)
+    clip = clip.resize(lambda t: 1 + 0.02 * t)
 
-    print("[✓] Video generated:", output_path)
+    # Output file
+    output_path = os.path.join(OUTPUT_DIR, "sigma_short.mp4")
+    clip.write_videofile(
+        output_path,
+        fps=30,
+        codec="libx264",
+        audio=False,
+        threads=4
+    )
+
+    print("Generated:", output_path)
 
 
-# ---------------------------------------------------------
-# MAIN
-# ---------------------------------------------------------
+# -------------------------
+# Run generator
+# -------------------------
 if __name__ == "__main__":
-    if not os.path.exists("outputs"):
-        os.mkdir("outputs")
     create_video()
