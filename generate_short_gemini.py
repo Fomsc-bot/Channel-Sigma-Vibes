@@ -1,27 +1,29 @@
 #!/usr/bin/env python3
 import os
 import uuid
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 from random import choice
-from moviepy.editor import TextClip, CompositeVideoClip, ColorClip, concatenate_videoclips
 
 # ===============================
 # CONFIG
 # ===============================
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
-QUOTES_FILE = Path("quotes.txt")   # Must exist
+QUOTES_FILE = Path("quotes.txt")
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 FPS = 30
 SCENE_DURATION = 5  # seconds per quote
-FADE_DURATION = 0.5  # seconds for fade in/out
+FADE_DURATION = 1.0  # seconds for fade in/out
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"  # default Linux font
 
 # ===============================
 # FUNCTIONS
 # ===============================
 def get_random_quote():
-    """Pick a random quote from quotes.txt and remove it from file."""
     if not QUOTES_FILE.exists():
         print("[!] Quotes file not found.")
         return None
@@ -31,53 +33,94 @@ def get_random_quote():
         print("[!] No more quotes left.")
         return None
     quote = choice(quotes)
-    # Remove used quote
     quotes.remove(quote)
     with open(QUOTES_FILE, "w", encoding="utf-8") as f:
         f.write("\n".join(quotes))
     return quote
 
-def create_scene_clip(quote):
-    """Create a single scene with text on a gradient background and fade-in/out."""
-    # Gradient background (dark at top -> lighter at bottom)
-    bg = ColorClip(size=(VIDEO_WIDTH, VIDEO_HEIGHT), color=(30, 30, 30), duration=SCENE_DURATION)
+def create_frame(text):
+    """Create a single PIL image with centered text and gradient background."""
+    img = Image.new("RGB", (VIDEO_WIDTH, VIDEO_HEIGHT))
+    draw = ImageDraw.Draw(img)
 
-    # Create text clip
-    txt_clip = TextClip(
-        txt=quote,
-        fontsize=70,
-        color="white",
-        font="Arial-Bold",
-        method="caption",
-        size=(VIDEO_WIDTH - 100, VIDEO_HEIGHT - 200),
-        align="center"
-    ).set_duration(SCENE_DURATION)
+    # Gradient background
+    for y in range(VIDEO_HEIGHT):
+        r = int(20 + (y / VIDEO_HEIGHT) * 40)
+        g = int(20 + (y / VIDEO_HEIGHT) * 40)
+        b = int(20 + (y / VIDEO_HEIGHT) * 40)
+        draw.line([(0, y), (VIDEO_WIDTH, y)], fill=(r, g, b))
 
-    # Add fade-in/out
-    txt_clip = txt_clip.fadein(FADE_DURATION).fadeout(FADE_DURATION)
-    scene = CompositeVideoClip([bg, txt_clip.set_position("center")])
-    return scene
+    # Load font
+    font_size = 80
+    font = ImageFont.truetype(FONT_PATH, font_size)
+
+    # Wrap text
+    lines = []
+    words = text.split()
+    line = ""
+    for word in words:
+        test_line = f"{line} {word}".strip()
+        w, h = draw.textsize(test_line, font=font)
+        if w > VIDEO_WIDTH - 100:
+            lines.append(line)
+            line = word
+        else:
+            line = test_line
+    lines.append(line)
+
+    # Draw text
+    total_h = len(lines) * font_size + (len(lines)-1)*10
+    y_text = (VIDEO_HEIGHT - total_h) // 2
+    for line in lines:
+        w, h = draw.textsize(line, font=font)
+        x_text = (VIDEO_WIDTH - w) // 2
+        draw.text((x_text, y_text), line, font=font, fill=(255, 255, 255))
+        y_text += font_size + 10
+
+    return np.array(img)
 
 def create_video(num_scenes=3):
-    """Generate the final video from quotes."""
     scenes = []
     for _ in range(num_scenes):
         quote = get_random_quote()
         if not quote:
             break
-        clip = create_scene_clip(quote)
-        scenes.append(clip)
+        scenes.append(quote)
+
     if not scenes:
-        print("[!] No scenes generated.")
+        print("[!] No quotes to generate video.")
         return
 
-    final_video = concatenate_videoclips(scenes)
     filename = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
-    final_video.write_videofile(str(filename), fps=FPS)
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    out = cv2.VideoWriter(str(filename), fourcc, FPS, (VIDEO_WIDTH, VIDEO_HEIGHT))
+
+    for quote in scenes:
+        frame = create_frame(quote)
+        fade_frames = int(FADE_DURATION * FPS)
+        scene_frames = int(SCENE_DURATION * FPS)
+
+        # Fade-in
+        for i in range(fade_frames):
+            alpha = i / fade_frames
+            out_frame = (frame * alpha).astype(np.uint8)
+            out.write(out_frame)
+
+        # Full scene
+        for _ in range(scene_frames - 2*fade_frames):
+            out.write(frame)
+
+        # Fade-out
+        for i in range(fade_frames):
+            alpha = 1 - (i / fade_frames)
+            out_frame = (frame * alpha).astype(np.uint8)
+            out.write(out_frame)
+
+    out.release()
     print(f"[+] Video saved to {filename}")
 
 # ===============================
 # MAIN
 # ===============================
 if __name__ == "__main__":
-    create_video(num_scenes=3)  # Change the number of quotes/scenes per short if needed
+    create_video(num_scenes=3)
