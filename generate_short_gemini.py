@@ -3,7 +3,7 @@ import os
 import random
 import uuid
 from pathlib import Path
-from moviepy.editor import TextClip, concatenate_videoclips
+from moviepy import editor as mpy
 from moviepy.video.fx.all import fadein, fadeout
 
 # ===============================
@@ -17,8 +17,7 @@ VIDEO_HEIGHT = 1920
 FPS = 30
 SCENE_DURATION = 5  # seconds per quote
 FADE_DURATION = 0.8  # seconds
-
-QUOTES_FILE = "quotes.txt"  # Each line is a Sigma quote
+QUOTES_FILE = "quotes.txt"
 
 # ===============================
 # UTILITY FUNCTIONS
@@ -44,8 +43,7 @@ def pick_random_quote(quotes):
 # VIDEO FUNCTIONS
 # ===============================
 def create_text_clip(text, duration=SCENE_DURATION):
-    """Create a single clip with fade in/out."""
-    clip = TextClip(
+    clip = mpy.TextClip(
         text,
         fontsize=80,
         color="white",
@@ -69,7 +67,7 @@ def create_video(quotes, num_scenes=5):
         clip = create_text_clip(quote)
         clips.append(clip)
     
-    final_video = concatenate_videoclips(clips)
+    final_video = mpy.concatenate_videoclips(clips)
     filename = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
     final_video.write_videofile(str(filename), fps=FPS)
     print(f"[+] Video saved to {filename}")
@@ -84,16 +82,11 @@ def main():
         print("[!] No quotes available to generate video.")
         return
 
-    # Number of quotes to use per video
     NUM_SCENES = 5
-
     print(f"[*] Generating video with {NUM_SCENES} quotes...")
-    video_file = create_video(quotes, NUM_SCENES)
-
-    # Save remaining quotes back to file
+    create_video(quotes, NUM_SCENES)
     save_quotes(QUOTES_FILE, quotes)
     print("[*] Remaining quotes saved.")
 
 if __name__ == "__main__":
     main()
-
