@@ -2,7 +2,7 @@ name: Generate Sigma Shorts (2x daily)
 
 on:
   schedule:
-    - cron: '0 0,12 * * *'   # Runs at 00:00 and 12:00 UTC daily
+    - cron: "0 0,12 * * *"   # Runs at 00:00 and 12:00 UTC daily
   workflow_dispatch:
 
 jobs:
@@ -18,19 +18,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install system dependencies
+      - name: Install Python dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          sudo apt-get clean
-
-      - name: Install Python dependencies (no cache)
-        run: |
-          pip install --no-cache-dir wheel
-          pip install --no-cache-dir --upgrade pip setuptools
-          pip install --no-cache-dir imageio imageio-ffmpeg
-          pip install --no-cache-dir moviepy
-          pip install --no-cache-dir torch transformers
+          pip install --no-cache-dir --upgrade pip
+          pip install --no-cache-dir Pillow pillow-av torch transformers
 
       - name: Create outputs directory
         run: mkdir -p outputs
