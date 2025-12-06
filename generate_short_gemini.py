@@ -1,130 +1,92 @@
+#!/usr/bin/env python3
 import os
-import random
-from moviepy.editor import *
-from PIL import Image, ImageDraw, ImageFont
+import uuid
+from pathlib import Path
+from random import choice
+from moviepy.video.VideoClip import TextClip
+from moviepy.video.compositing.concatenate import concatenate_videoclips
+from moviepy.video.fx.all import fadein, fadeout
 
-# -------------------------
-# CONFIGURATION
-# -------------------------
-WIDTH = 1080
-HEIGHT = 1920
-BG_COLOR = (10, 10, 10)
-TEXT_COLOR = "white"
-FONT_TITLE = "DejaVuSans-Bold.ttf"      # GitHub Actions safe font
-FONT_SIZE_TITLE = 80
-DURATION = 6                             # seconds
-FADE_DURATION = 1.2                      # text fade-in
+# ===============================
+# CONFIG
+# ===============================
+OUTPUT_DIR = Path("outputs")
+OUTPUT_DIR.mkdir(exist_ok=True)
+VIDEO_WIDTH = 1080
+VIDEO_HEIGHT = 1920
+FPS = 30
+SCENE_DURATION = 5  # seconds per quote
+FADE_DURATION = 1   # seconds
+QUOTES_FILE = Path("quotes.txt")  # file containing one quote per line
+MAX_QUOTES = 10  # max number of quotes per video
 
-QUOTES_FILE = "quotes.txt"
-OUTPUT_DIR = "outputs"
-
-
-# -------------------------
-# Read a quote + delete it so it won't repeat
-# -------------------------
-def get_unique_quote():
-    if not os.path.exists(QUOTES_FILE):
-        raise FileNotFoundError("quotes.txt not found! Add it to the repo.")
-
+# ===============================
+# Load quotes
+# ===============================
+def load_quotes():
+    if not QUOTES_FILE.exists():
+        print(f"[!] Quotes file {QUOTES_FILE} not found.")
+        return []
     with open(QUOTES_FILE, "r", encoding="utf-8") as f:
-        quotes = [q.strip() for q in f.readlines() if q.strip()]
+        quotes = [line.strip() for line in f if line.strip()]
+    return quotes
 
-    if not quotes:
-        raise ValueError("No quotes left in quotes.txt")
-
-    quote = random.choice(quotes)
-    quotes.remove(quote)
-
-    # Write back remaining quotes
+# ===============================
+# Save remaining quotes
+# ===============================
+def save_remaining_quotes(quotes):
     with open(QUOTES_FILE, "w", encoding="utf-8") as f:
-        for q in quotes:
-            f.write(q + "\n")
+        f.write("\n".join(quotes))
 
-    return quote
+# ===============================
+# Create video clip for a quote
+# ===============================
+def create_scene_clip(quote):
+    clip = TextClip(
+        quote,
+        fontsize=80,
+        color="white",
+        size=(VIDEO_WIDTH, VIDEO_HEIGHT),
+        method="caption",
+        align="center",
+        font="Arial-Bold"
+    ).set_duration(SCENE_DURATION)
 
+    # Apply fade in/out
+    clip = fadein(clip, FADE_DURATION).fadeout(FADE_DURATION)
+    return clip
 
-# -------------------------
-# Create ONE frame with text
-# -------------------------
-def generate_frame(quote, frame_path):
-    img = Image.new("RGB", (WIDTH, HEIGHT), BG_COLOR)
-    draw = ImageDraw.Draw(img)
+# ===============================
+# Compose full video
+# ===============================
+def compose_video(selected_quotes):
+    clips = [create_scene_clip(q) for q in selected_quotes]
+    final_video = concatenate_videoclips(clips, method="compose")
+    return final_video
 
-    # Load font
-    try:
-        font = ImageFont.truetype(FONT_TITLE, FONT_SIZE_TITLE)
-    except:
-        font = ImageFont.load_default()
+# ===============================
+# Main
+# ===============================
+def main():
+    quotes = load_quotes()
+    if not quotes:
+        print("[!] No quotes available.")
+        return
 
-    # Text box wrap
-    max_width = WIDTH - 200
-    words = quote.split()
-    lines = []
-    line = ""
+    num_quotes = min(MAX_QUOTES, len(quotes))
+    selected_quotes = []
+    for _ in range(num_quotes):
+        q = choice(quotes)
+        selected_quotes.append(q)
+        quotes.remove(q)  # remove used quote
 
-    for word in words:
-        test_line = line + word + " "
-        w, _ = draw.textbbox((0, 0), test_line, font=font)[2:]
-        if w <= max_width:
-            line = test_line
-        else:
-            lines.append(line)
-            line = word + " "
-    lines.append(line)
+    save_remaining_quotes(quotes)  # save remaining quotes
 
-    # Center vertically
-    total_h = len(lines) * (FONT_SIZE_TITLE + 20)
-    y = (HEIGHT - total_h) // 2
+    print(f"[*] Creating video with {len(selected_quotes)} quotes...")
+    video = compose_video(selected_quotes)
+    filename = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
+    video.write_videofile(str(filename), fps=FPS)
+    print(f"[+] Video saved to {filename}")
 
-    # Draw each line
-    for line in lines:
-        w, h = draw.textbbox((0, 0), line, font=font)[2:]
-        x = (WIDTH - w) // 2
-        draw.text((x, y), line, fill=TEXT_COLOR, font=font)
-        y += FONT_SIZE_TITLE + 20
-
-    img.save(frame_path)
-
-
-# -------------------------
-# Create final video
-# -------------------------
-def create_video():
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
-
-    quote = get_unique_quote()
-    frame_path = "frame.png"
-
-    print("Using quote:", quote)
-
-    # Create still image
-    generate_frame(quote, frame_path)
-
-    # Load image into video
-    clip = ImageClip(frame_path).set_duration(DURATION)
-
-    # Add fade-in
-    clip = clip.fadein(FADE_DURATION)
-
-    # Slight zoom animation (for engagement)
-    clip = clip.resize(lambda t: 1 + 0.02 * t)
-
-    # Output file
-    output_path = os.path.join(OUTPUT_DIR, "sigma_short.mp4")
-    clip.write_videofile(
-        output_path,
-        fps=30,
-        codec="libx264",
-        audio=False,
-        threads=4
-    )
-
-    print("Generated:", output_path)
-
-
-# -------------------------
-# Run generator
-# -------------------------
 if __name__ == "__main__":
-    create_video()
+    main()
