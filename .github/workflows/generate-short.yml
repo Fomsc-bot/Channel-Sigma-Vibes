@@ -21,16 +21,13 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg imagemagick
+          sudo apt-get install -y ffmpeg
           sudo apt-get clean
 
       - name: Install Python dependencies
         run: |
-          pip install --upgrade pip
-          pip install --no-cache-dir wheel setuptools
-          pip install --no-cache-dir imageio imageio-ffmpeg
-          pip install --no-cache-dir moviepy==2.2.1
-          pip install --no-cache-dir torch transformers
+          python -m pip install --upgrade pip
+          pip install --no-cache-dir -r requirements.txt
 
       - name: Create outputs directory
         run: mkdir -p outputs
