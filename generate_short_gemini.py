@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 import os
+import random
 import uuid
 from pathlib import Path
-from random import choice
-from moviepy.video.VideoClip import TextClip
-from moviepy.video.compositing.concatenate import concatenate_videoclips
+from moviepy.editor import TextClip, concatenate_videoclips
 from moviepy.video.fx.all import fadein, fadeout
 
 # ===============================
@@ -12,81 +11,89 @@ from moviepy.video.fx.all import fadein, fadeout
 # ===============================
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
+
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 FPS = 30
 SCENE_DURATION = 5  # seconds per quote
-FADE_DURATION = 1   # seconds
-QUOTES_FILE = Path("quotes.txt")  # file containing one quote per line
-MAX_QUOTES = 10  # max number of quotes per video
+FADE_DURATION = 0.8  # seconds
+
+QUOTES_FILE = "quotes.txt"  # Each line is a Sigma quote
 
 # ===============================
-# Load quotes
+# UTILITY FUNCTIONS
 # ===============================
-def load_quotes():
-    if not QUOTES_FILE.exists():
-        print(f"[!] Quotes file {QUOTES_FILE} not found.")
+def load_quotes(file_path):
+    if not os.path.exists(file_path):
+        print(f"[!] Quotes file '{file_path}' not found.")
         return []
-    with open(QUOTES_FILE, "r", encoding="utf-8") as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         quotes = [line.strip() for line in f if line.strip()]
     return quotes
 
-# ===============================
-# Save remaining quotes
-# ===============================
-def save_remaining_quotes(quotes):
-    with open(QUOTES_FILE, "w", encoding="utf-8") as f:
+def save_quotes(file_path, quotes):
+    with open(file_path, "w", encoding="utf-8") as f:
         f.write("\n".join(quotes))
 
+def pick_random_quote(quotes):
+    quote = random.choice(quotes)
+    quotes.remove(quote)
+    return quote
+
 # ===============================
-# Create video clip for a quote
+# VIDEO FUNCTIONS
 # ===============================
-def create_scene_clip(quote):
+def create_text_clip(text, duration=SCENE_DURATION):
+    """Create a single clip with fade in/out."""
     clip = TextClip(
-        quote,
+        text,
         fontsize=80,
         color="white",
+        font="Arial-Bold",
         size=(VIDEO_WIDTH, VIDEO_HEIGHT),
         method="caption",
-        align="center",
-        font="Arial-Bold"
-    ).set_duration(SCENE_DURATION)
+        align="center"
+    ).set_duration(duration)
 
-    # Apply fade in/out
-    clip = fadein(clip, FADE_DURATION).fadeout(FADE_DURATION)
+    clip = fadein(clip, FADE_DURATION)
+    clip = fadeout(clip, FADE_DURATION)
     return clip
 
-# ===============================
-# Compose full video
-# ===============================
-def compose_video(selected_quotes):
-    clips = [create_scene_clip(q) for q in selected_quotes]
-    final_video = concatenate_videoclips(clips, method="compose")
-    return final_video
+def create_video(quotes, num_scenes=5):
+    if len(quotes) < num_scenes:
+        num_scenes = len(quotes)
+    
+    clips = []
+    for _ in range(num_scenes):
+        quote = pick_random_quote(quotes)
+        clip = create_text_clip(quote)
+        clips.append(clip)
+    
+    final_video = concatenate_videoclips(clips)
+    filename = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
+    final_video.write_videofile(str(filename), fps=FPS)
+    print(f"[+] Video saved to {filename}")
+    return filename
 
 # ===============================
-# Main
+# MAIN
 # ===============================
 def main():
-    quotes = load_quotes()
+    quotes = load_quotes(QUOTES_FILE)
     if not quotes:
-        print("[!] No quotes available.")
+        print("[!] No quotes available to generate video.")
         return
 
-    num_quotes = min(MAX_QUOTES, len(quotes))
-    selected_quotes = []
-    for _ in range(num_quotes):
-        q = choice(quotes)
-        selected_quotes.append(q)
-        quotes.remove(q)  # remove used quote
+    # Number of quotes to use per video
+    NUM_SCENES = 5
 
-    save_remaining_quotes(quotes)  # save remaining quotes
+    print(f"[*] Generating video with {NUM_SCENES} quotes...")
+    video_file = create_video(quotes, NUM_SCENES)
 
-    print(f"[*] Creating video with {len(selected_quotes)} quotes...")
-    video = compose_video(selected_quotes)
-    filename = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
-    video.write_videofile(str(filename), fps=FPS)
-    print(f"[+] Video saved to {filename}")
+    # Save remaining quotes back to file
+    save_quotes(QUOTES_FILE, quotes)
+    print("[*] Remaining quotes saved.")
 
 if __name__ == "__main__":
     main()
+
