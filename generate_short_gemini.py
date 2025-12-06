@@ -2,9 +2,12 @@
 import os
 import json
 import uuid
-import requests
 from pathlib import Path
 from moviepy.editor import TextClip, concatenate_videoclips
+
+# Hugging Face imports
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+import torch
 
 # =============================
 # CONFIG
@@ -17,16 +20,13 @@ VIDEO_HEIGHT = 1920
 FPS = 30
 SCENE_DURATION = 5
 
-HF_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
-HF_API_URL = "https://router.huggingface.co/text-generation"  # NEW API
-
-HF_TOKEN = os.getenv("HF_TOKEN")  # optional
-HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
+# Small free model for CPU
+MODEL_NAME = "gpt2"  # tiny, fully free
+DEVICE = "cpu"       # use "cuda" if GPU is available
 
 PROMPT = """
-Generate exactly 3 motivational Sigma mindset rules for a YouTube Short.
-Return only valid JSON in this structure:
-
+Generate 3 motivational Sigma mindset rules for a YouTube Short.
+Output JSON exactly like this:
 {
   "scenes": [
     {"title": "Scene 1 title", "subtitle": "Scene 1 subtitle"},
@@ -37,50 +37,39 @@ Return only valid JSON in this structure:
 """
 
 # =============================
-# Hugging Face API
-# =============================
-def generate_text():
-    print("[*] Contacting HF Router API...")
-
-    payload = {
-        "model": HF_MODEL,
-        "inputs": PROMPT,
-        "parameters": {
-            "max_new_tokens": 200,
-            "temperature": 0.7
-        }
-    }
-
-    response = requests.post(HF_API_URL, headers=HEADERS, json=payload)
-
-    if response.status_code != 200:
-        print("[!] HF API Error:", response.text)
-        return ""
-
-    try:
-        return response.json()["generated_text"]
-    except Exception:
-        print("[!] Unexpected format from HF:", response.text)
-        return ""
-
-# =============================
-# Parse JSON scenes
+# Generate text with local model
 # =============================
 def generate_script():
-    text = generate_text()
-    if not text:
-        return []
+    print("[*] Loading local model...")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
+    model.to(DEVICE)
 
+    generator = pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        device=-1 if DEVICE == "cpu" else 0
+    )
+
+    print("[*] Generating script...")
+    output = generator(PROMPT, max_length=250, do_sample=True, temperature=0.7)
+    text = output[0]["generated_text"]
+
+    # Try to extract JSON
     try:
-        data = json.loads(text)
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        json_text = text[start:end]
+        data = json.loads(json_text)
         return data.get("scenes", [])
-    except:
-        print("[!] Could not parse returned text as JSON:")
+    except Exception:
+        print("[!] Failed to parse JSON from model output:")
         print(text)
         return []
 
 # =============================
-# Video builder
+# Video
 # =============================
 def create_scene_clip(title, subtitle, duration=SCENE_DURATION):
     txt = f"{title}\n{subtitle}"
@@ -105,19 +94,16 @@ def compose_video(scenes):
 # =============================
 def main():
     scenes = generate_script()
-
     if not scenes:
         print("[!] No scenes generated.")
         return
 
-    print(f"[*] Creating video with {len(scenes)} scenes...")
-
+    print(f"[*] Composing video with {len(scenes)} scenes...")
     video = compose_video(scenes)
-    file = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
 
-    video.write_videofile(str(file), fps=FPS)
-    print("[+] Saved:", file)
-
+    filepath = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
+    video.write_videofile(str(filepath), fps=FPS)
+    print("[+] Saved video:", filepath)
 
 if __name__ == "__main__":
     main()
