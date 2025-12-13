@@ -13,6 +13,7 @@ OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 BACKGROUND_DIR = Path("Background_images")
+MERGE_VIDEO_DIR = Path("out")
 
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
@@ -24,14 +25,13 @@ FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_SIZE = 80
 
 FADE_FRAMES = 15
-TYPE_SPEED = 2  # chars per frame
+TYPE_SPEED = 2
 
 # ===============================
 # UTILITIES
 # ===============================
 
-def ease_in_out(t: float) -> float:
-    """Smooth cinematic easing"""
+def ease_in_out(t):
     return 0.5 - 0.5 * np.cos(np.pi * t)
 
 # ===============================
@@ -55,7 +55,7 @@ def load_quote():
     return quote
 
 # ===============================
-# BACKGROUND
+# BACKGROUND IMAGE
 # ===============================
 
 def load_background_image():
@@ -80,34 +80,23 @@ def load_background_image():
     return img
 
 # ===============================
-# SMOOTH KEN BURNS
+# KEN BURNS
 # ===============================
 
-def prepare_ken_burns(img):
-    """Precompute motion parameters ONCE"""
-    zoom_end = random.uniform(1.1, 1.2)
+def prepare_ken_burns():
+    return random.uniform(1.1, 1.2), random.choice([0, 0.5, 1]), random.choice([0, 0.5, 1])
 
-    pan_x_dir = random.choice([0.0, 0.5, 1.0])
-    pan_y_dir = random.choice([0.0, 0.5, 1.0])
-
-    return zoom_end, pan_x_dir, pan_y_dir
-
-def ken_burns_frame(img, idx, total, zoom_end, pan_x_dir, pan_y_dir):
+def ken_burns_frame(img, idx, total, zoom_end, pan_x, pan_y):
     t = ease_in_out(idx / total)
-
-    zoom = 1.0 + (zoom_end - 1.0) * t
+    zoom = 1 + (zoom_end - 1) * t
 
     w, h = img.size
-    crop_w = int(w / zoom)
-    crop_h = int(h / zoom)
+    cw, ch = int(w / zoom), int(h / zoom)
 
-    max_x = w - crop_w
-    max_y = h - crop_h
+    x = int((w - cw) * pan_x * t)
+    y = int((h - ch) * pan_y * t)
 
-    x = int(max_x * pan_x_dir * t)
-    y = int(max_y * pan_y_dir * t)
-
-    crop = img.crop((x, y, x + crop_w, y + crop_h))
+    crop = img.crop((x, y, x + cw, y + ch))
     return crop.resize((VIDEO_WIDTH, VIDEO_HEIGHT), Image.LANCZOS)
 
 # ===============================
@@ -128,7 +117,7 @@ def draw_typewriter_text(img, text, frame_idx):
     draw = ImageDraw.Draw(img)
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
 
-    visible = text[: frame_idx * TYPE_SPEED]
+    visible = text[:frame_idx * TYPE_SPEED]
     lines = wrap_text(draw, visible, font, VIDEO_WIDTH * 0.8)
 
     total_h = sum(draw.textbbox((0,0), l, font=font)[3] for l in lines)
@@ -136,36 +125,53 @@ def draw_typewriter_text(img, text, frame_idx):
 
     for line in lines:
         bbox = draw.textbbox((0,0), line, font=font)
-        w = bbox[2] - bbox[0]
-        h = bbox[3] - bbox[1]
-        x = (VIDEO_WIDTH - w) // 2
+        x = (VIDEO_WIDTH - (bbox[2]-bbox[0])) // 2
 
         draw.text((x+3, y+3), line, font=font, fill=(0,0,0))
         draw.text((x, y), line, font=font, fill=(255,255,255))
-        y += h + 10
+        y += (bbox[3]-bbox[1]) + 10
 
 # ===============================
 # FADE
 # ===============================
 
 def apply_fade(frame, idx, total):
-    alpha = min(
-        (idx+1)/FADE_FRAMES,
-        (total-idx)/FADE_FRAMES,
-        1.0
-    )
+    alpha = min((idx+1)/FADE_FRAMES, (total-idx)/FADE_FRAMES, 1)
     return cv2.addWeighted(frame, alpha, np.zeros_like(frame), 1-alpha, 0)
 
 # ===============================
-# VIDEO
+# LOAD MERGE VIDEO
+# ===============================
+
+def load_merge_video_frames():
+    videos = list(MERGE_VIDEO_DIR.glob("*.mp4"))
+    if not videos:
+        raise FileNotFoundError("No videos in out/ folder")
+
+    cap = cv2.VideoCapture(str(random.choice(videos)))
+    frames = []
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = cv2.resize(frame, (VIDEO_WIDTH, VIDEO_HEIGHT))
+        frames.append(frame)
+
+    cap.release()
+    return frames
+
+# ===============================
+# CREATE FINAL VIDEO
 # ===============================
 
 def create_video():
     quote = load_quote()
     bg = load_background_image()
+    zoom_end, pan_x, pan_y = prepare_ken_burns()
 
-    zoom_end, pan_x_dir, pan_y_dir = prepare_ken_burns(bg)
-    total_frames = SCENE_DURATION * FPS
+    quote_frames = SCENE_DURATION * FPS
+    merge_frames = load_merge_video_frames()
 
     output = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
     writer = cv2.VideoWriter(
@@ -175,20 +181,21 @@ def create_video():
         (VIDEO_WIDTH, VIDEO_HEIGHT)
     )
 
-    for i in range(total_frames):
-        frame_img = ken_burns_frame(
-            bg, i, total_frames,
-            zoom_end, pan_x_dir, pan_y_dir
-        )
+    # --- QUOTE VIDEO ---
+    for i in range(quote_frames):
+        img = ken_burns_frame(bg, i, quote_frames, zoom_end, pan_x, pan_y)
+        draw_typewriter_text(img, quote, i)
 
-        draw_typewriter_text(frame_img, quote, i)
+        frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        frame = apply_fade(frame, i, quote_frames)
+        writer.write(frame)
 
-        frame = cv2.cvtColor(np.array(frame_img), cv2.COLOR_RGB2BGR)
-        frame = apply_fade(frame, i, total_frames)
+    # --- MERGED VIDEO ---
+    for frame in merge_frames:
         writer.write(frame)
 
     writer.release()
-    print("✅ Smooth cinematic video created:", output)
+    print("✅ Final merged video created:", output)
 
 # ===============================
 # RUN
