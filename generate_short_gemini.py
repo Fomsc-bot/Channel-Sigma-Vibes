@@ -17,23 +17,28 @@ BACKGROUND_DIR = Path("Background_images")
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 FPS = 30
-SCENE_DURATION = 5  # seconds (1 quote per short)
+SCENE_DURATION = 5
 
 QUOTE_FILE = "quotes.txt"
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_SIZE = 80
 
 FADE_FRAMES = 15
-TYPE_SPEED = 2  # characters per frame (typewriter speed)
+TYPE_SPEED = 2  # chars per frame
 
 # ===============================
-# QUOTE HANDLING
+# UTILITIES
+# ===============================
+
+def ease_in_out(t: float) -> float:
+    """Smooth cinematic easing"""
+    return 0.5 - 0.5 * np.cos(np.pi * t)
+
+# ===============================
+# QUOTE
 # ===============================
 
 def load_quote():
-    if not Path(QUOTE_FILE).exists():
-        raise FileNotFoundError("quotes.txt not found")
-
     with open(QUOTE_FILE, "r", encoding="utf-8") as f:
         quotes = [q.strip() for q in f if q.strip()]
 
@@ -50,7 +55,7 @@ def load_quote():
     return quote
 
 # ===============================
-# BACKGROUND IMAGE + KEN BURNS
+# BACKGROUND
 # ===============================
 
 def load_background_image():
@@ -60,7 +65,6 @@ def load_background_image():
 
     img = Image.open(random.choice(images)).convert("RGB")
 
-    # Crop to 9:16
     img_ratio = img.width / img.height
     target_ratio = VIDEO_WIDTH / VIDEO_HEIGHT
 
@@ -75,27 +79,39 @@ def load_background_image():
 
     return img
 
-def ken_burns_frame(img, frame_idx, total_frames):
-    zoom_start = 1.0
-    zoom_end = random.uniform(1.1, 1.25)
-    zoom = zoom_start + (zoom_end - zoom_start) * (frame_idx / total_frames)
+# ===============================
+# SMOOTH KEN BURNS
+# ===============================
+
+def prepare_ken_burns(img):
+    """Precompute motion parameters ONCE"""
+    zoom_end = random.uniform(1.1, 1.2)
+
+    pan_x_dir = random.choice([0.0, 0.5, 1.0])
+    pan_y_dir = random.choice([0.0, 0.5, 1.0])
+
+    return zoom_end, pan_x_dir, pan_y_dir
+
+def ken_burns_frame(img, idx, total, zoom_end, pan_x_dir, pan_y_dir):
+    t = ease_in_out(idx / total)
+
+    zoom = 1.0 + (zoom_end - 1.0) * t
 
     w, h = img.size
-    new_w, new_h = int(w / zoom), int(h / zoom)
+    crop_w = int(w / zoom)
+    crop_h = int(h / zoom)
 
-    max_x = w - new_w
-    max_y = h - new_h
+    max_x = w - crop_w
+    max_y = h - crop_h
 
-    pan_x = int(max_x * frame_idx / total_frames)
-    pan_y = int(max_y * frame_idx / total_frames)
+    x = int(max_x * pan_x_dir * t)
+    y = int(max_y * pan_y_dir * t)
 
-    crop = img.crop((pan_x, pan_y, pan_x + new_w, pan_y + new_h))
-    crop = crop.resize((VIDEO_WIDTH, VIDEO_HEIGHT), Image.LANCZOS)
-
-    return crop
+    crop = img.crop((x, y, x + crop_w, y + crop_h))
+    return crop.resize((VIDEO_WIDTH, VIDEO_HEIGHT), Image.LANCZOS)
 
 # ===============================
-# TEXT RENDERING
+# TEXT
 # ===============================
 
 def wrap_text(draw, text, font, max_width):
@@ -103,7 +119,7 @@ def wrap_text(draw, text, font, max_width):
     lines = []
     while words:
         line = ""
-        while words and draw.textbbox((0, 0), line + words[0], font=font)[2] < max_width:
+        while words and draw.textbbox((0,0), line + words[0], font=font)[2] < max_width:
             line += words.pop(0) + " "
         lines.append(line.strip())
     return lines
@@ -112,13 +128,11 @@ def draw_typewriter_text(img, text, frame_idx):
     draw = ImageDraw.Draw(img)
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
 
-    max_chars = frame_idx * TYPE_SPEED
-    visible_text = text[:max_chars]
+    visible = text[: frame_idx * TYPE_SPEED]
+    lines = wrap_text(draw, visible, font, VIDEO_WIDTH * 0.8)
 
-    lines = wrap_text(draw, visible_text, font, VIDEO_WIDTH * 0.8)
-
-    total_height = sum(draw.textbbox((0,0), l, font=font)[3] for l in lines)
-    y = (VIDEO_HEIGHT - total_height) // 2
+    total_h = sum(draw.textbbox((0,0), l, font=font)[3] for l in lines)
+    y = (VIDEO_HEIGHT - total_h) // 2
 
     for line in lines:
         bbox = draw.textbbox((0,0), line, font=font)
@@ -131,47 +145,50 @@ def draw_typewriter_text(img, text, frame_idx):
         y += h + 10
 
 # ===============================
-# FADE EFFECT
+# FADE
 # ===============================
 
 def apply_fade(frame, idx, total):
-    alpha_in = min(1.0, (idx+1) / FADE_FRAMES)
-    alpha_out = min(1.0, (total-idx) / FADE_FRAMES)
-    alpha = min(alpha_in, alpha_out)
-
-    black = np.zeros_like(frame)
-    return cv2.addWeighted(frame, alpha, black, 1-alpha, 0)
+    alpha = min(
+        (idx+1)/FADE_FRAMES,
+        (total-idx)/FADE_FRAMES,
+        1.0
+    )
+    return cv2.addWeighted(frame, alpha, np.zeros_like(frame), 1-alpha, 0)
 
 # ===============================
-# VIDEO CREATION
+# VIDEO
 # ===============================
 
 def create_video():
     quote = load_quote()
-    bg_image = load_background_image()
+    bg = load_background_image()
 
+    zoom_end, pan_x_dir, pan_y_dir = prepare_ken_burns(bg)
     total_frames = SCENE_DURATION * FPS
 
-    output_path = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
+    output = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
     writer = cv2.VideoWriter(
-        str(output_path),
+        str(output),
         cv2.VideoWriter_fourcc(*"mp4v"),
         FPS,
         (VIDEO_WIDTH, VIDEO_HEIGHT)
     )
 
     for i in range(total_frames):
-        bg = ken_burns_frame(bg_image, i, total_frames)
-        draw_typewriter_text(bg, quote, i)
+        frame_img = ken_burns_frame(
+            bg, i, total_frames,
+            zoom_end, pan_x_dir, pan_y_dir
+        )
 
-        frame = cv2.cvtColor(np.array(bg), cv2.COLOR_RGB2BGR)
+        draw_typewriter_text(frame_img, quote, i)
+
+        frame = cv2.cvtColor(np.array(frame_img), cv2.COLOR_RGB2BGR)
         frame = apply_fade(frame, i, total_frames)
-
         writer.write(frame)
 
     writer.release()
-    print("✅ Video created:", output_path)
-    print("🧠 Quote used:", quote)
+    print("✅ Smooth cinematic video created:", output)
 
 # ===============================
 # RUN
@@ -179,4 +196,3 @@ def create_video():
 
 if __name__ == "__main__":
     create_video()
-
