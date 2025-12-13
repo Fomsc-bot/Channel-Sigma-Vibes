@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 import random
 import uuid
+import subprocess
 
 # ===============================
 # CONFIG
@@ -14,6 +15,7 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 BACKGROUND_DIR = Path("Background_images")
 MERGE_VIDEO_DIR = Path("out")
+MUSIC_DIR = Path("Background_Music")
 
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
@@ -126,7 +128,6 @@ def draw_typewriter_text(img, text, frame_idx):
     for line in lines:
         bbox = draw.textbbox((0,0), line, font=font)
         x = (VIDEO_WIDTH - (bbox[2]-bbox[0])) // 2
-
         draw.text((x+3, y+3), line, font=font, fill=(0,0,0))
         draw.text((x, y), line, font=font, fill=(255,255,255))
         y += (bbox[3]-bbox[1]) + 10
@@ -162,6 +163,34 @@ def load_merge_video_frames():
     return frames
 
 # ===============================
+# ADD BACKGROUND MUSIC
+# ===============================
+
+def add_background_music(video_path):
+    music_files = list(MUSIC_DIR.glob("*.*"))
+    if not music_files:
+        raise FileNotFoundError("No music files in Background_Music")
+
+    music = random.choice(music_files)
+    final_path = video_path.with_name(video_path.stem + "_music.mp4")
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(video_path),
+        "-stream_loop", "-1",
+        "-i", str(music),
+        "-shortest",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        str(final_path)
+    ]
+
+    subprocess.run(cmd, check=True)
+    video_path.unlink()  # remove no-audio version
+    return final_path
+
+# ===============================
 # CREATE FINAL VIDEO
 # ===============================
 
@@ -173,15 +202,15 @@ def create_video():
     quote_frames = SCENE_DURATION * FPS
     merge_frames = load_merge_video_frames()
 
-    output = OUTPUT_DIR / f"sigma_short_{uuid.uuid4().hex[:8]}.mp4"
+    temp_video = OUTPUT_DIR / f"temp_{uuid.uuid4().hex}.mp4"
+
     writer = cv2.VideoWriter(
-        str(output),
+        str(temp_video),
         cv2.VideoWriter_fourcc(*"mp4v"),
         FPS,
         (VIDEO_WIDTH, VIDEO_HEIGHT)
     )
 
-    # --- QUOTE VIDEO ---
     for i in range(quote_frames):
         img = ken_burns_frame(bg, i, quote_frames, zoom_end, pan_x, pan_y)
         draw_typewriter_text(img, quote, i)
@@ -190,12 +219,13 @@ def create_video():
         frame = apply_fade(frame, i, quote_frames)
         writer.write(frame)
 
-    # --- MERGED VIDEO ---
     for frame in merge_frames:
         writer.write(frame)
 
     writer.release()
-    print("✅ Final merged video created:", output)
+
+    final_video = add_background_music(temp_video)
+    print("🎵 Final video with music created:", final_video)
 
 # ===============================
 # RUN
