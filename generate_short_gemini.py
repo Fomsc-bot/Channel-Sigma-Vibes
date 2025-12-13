@@ -6,6 +6,7 @@ from pathlib import Path
 import random
 import uuid
 import subprocess
+import math
 
 # ===============================
 # CONFIG
@@ -29,12 +30,19 @@ FONT_SIZE = 80
 FADE_FRAMES = 15
 TYPE_SPEED = 2
 
+BEAT_INTERVAL = FPS // 2   # ~120 BPM
+BEAT_SCALE = 0.15          # Text pulse strength
+
 # ===============================
 # UTILITIES
 # ===============================
 
 def ease_in_out(t):
-    return 0.5 - 0.5 * np.cos(np.pi * t)
+    return 0.5 - 0.5 * math.cos(math.pi * t)
+
+def beat_pulse(frame_idx):
+    phase = (frame_idx % BEAT_INTERVAL) / BEAT_INTERVAL
+    return 1.0 + BEAT_SCALE * math.sin(math.pi * phase)
 
 # ===============================
 # QUOTE
@@ -102,7 +110,7 @@ def ken_burns_frame(img, idx, total, zoom_end, pan_x, pan_y):
     return crop.resize((VIDEO_WIDTH, VIDEO_HEIGHT), Image.LANCZOS)
 
 # ===============================
-# TEXT
+# TEXT (TYPE + BEAT SYNC)
 # ===============================
 
 def wrap_text(draw, text, font, max_width):
@@ -115,22 +123,30 @@ def wrap_text(draw, text, font, max_width):
         lines.append(line.strip())
     return lines
 
-def draw_typewriter_text(img, text, frame_idx):
-    draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
+def draw_beat_sync_text(img, text, frame_idx):
+    base_font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
+    pulse = beat_pulse(frame_idx)
+    font = ImageFont.truetype(FONT_PATH, int(FONT_SIZE * pulse))
 
+    draw = ImageDraw.Draw(img)
     visible = text[:frame_idx * TYPE_SPEED]
     lines = wrap_text(draw, visible, font, VIDEO_WIDTH * 0.8)
 
     total_h = sum(draw.textbbox((0,0), l, font=font)[3] for l in lines)
     y = (VIDEO_HEIGHT - total_h) // 2
 
+    glow = int(120 * pulse)
+
     for line in lines:
         bbox = draw.textbbox((0,0), line, font=font)
-        x = (VIDEO_WIDTH - (bbox[2]-bbox[0])) // 2
-        draw.text((x+3, y+3), line, font=font, fill=(0,0,0))
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        x = (VIDEO_WIDTH - w) // 2
+
+        # Glow shadow
+        draw.text((x+4, y+4), line, font=font, fill=(0,0,0))
         draw.text((x, y), line, font=font, fill=(255,255,255))
-        y += (bbox[3]-bbox[1]) + 10
+        y += h + 10
 
 # ===============================
 # FADE
@@ -174,7 +190,7 @@ def add_background_music(video_path):
     music = random.choice(music_files)
     final_path = video_path.with_name(video_path.stem + "_music.mp4")
 
-    cmd = [
+    subprocess.run([
         "ffmpeg", "-y",
         "-i", str(video_path),
         "-stream_loop", "-1",
@@ -184,10 +200,9 @@ def add_background_music(video_path):
         "-c:a", "aac",
         "-b:a", "192k",
         str(final_path)
-    ]
+    ], check=True)
 
-    subprocess.run(cmd, check=True)
-    video_path.unlink()  # remove no-audio version
+    video_path.unlink()
     return final_path
 
 # ===============================
@@ -213,7 +228,7 @@ def create_video():
 
     for i in range(quote_frames):
         img = ken_burns_frame(bg, i, quote_frames, zoom_end, pan_x, pan_y)
-        draw_typewriter_text(img, quote, i)
+        draw_beat_sync_text(img, quote, i)
 
         frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
         frame = apply_fade(frame, i, quote_frames)
@@ -225,7 +240,7 @@ def create_video():
     writer.release()
 
     final_video = add_background_music(temp_video)
-    print("🎵 Final video with music created:", final_video)
+    print("🎵 Beat-synced cinematic video created:", final_video)
 
 # ===============================
 # RUN
