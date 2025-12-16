@@ -38,9 +38,9 @@ TYPE_SPEED = 2
 # YOUTUBE CREDENTIALS
 # ===============================
 
-CLIENT_ID = "CLIENTID"
-CLIENT_SECRET = "CLIENTSECRET"
-REFRESH_TOKEN = "REFRESHTOKEN"
+CLIENT_ID = "193654836130-ete2tqnm52un70bnj5ahfp23qlpt4g5u.apps.googleusercontent.com"
+CLIENT_SECRET = "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"
+REFRESH_TOKEN = "1//0gT9zWzMp_ABrCgYIARAAGBASNwF-L9IrujGKCmb2P2pIpKsH8gf4Av2p90dDCbRWnD3vJZfIX7fvgHViK0yAmQLYZiBOYmfT_r8"
 
 # ===============================
 # UTILITIES
