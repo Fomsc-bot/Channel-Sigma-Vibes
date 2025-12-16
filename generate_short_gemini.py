@@ -65,13 +65,14 @@ def upload_to_youtube(video_path, quote):
 
     youtube = build("youtube", "v3", credentials=creds)
 
-    # --- TITLE FIX: 3 words + emojis
+    # --- TITLE FIX: 3 words + emojis + hashtags
     words = quote.split()
     title_words = words[:3]
     emojis = ["💪","🔥","🧠","✨","⚡"]
-    title = " ".join(title_words) + " " + random.choice(emojis)
+    hashtags = "#shorts #motivation #sigma #mindset"
+    title = " ".join(title_words) + " " + random.choice(emojis) + " " + hashtags
     
-    description = f"{quote}\n\n#shorts #motivation #sigma #mindset"
+    description = quote  # now only the quote itself
     tags = ["shorts", "motivation", "sigma", "mindset"]
 
     request = youtube.videos().insert(
