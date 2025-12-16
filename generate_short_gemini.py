@@ -7,9 +7,14 @@ import random
 import uuid
 import subprocess
 
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from google.oauth2.credentials import Credentials
+
 # ===============================
 # CONFIG
 # ===============================
+
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -30,11 +35,64 @@ FADE_FRAMES = 15
 TYPE_SPEED = 2
 
 # ===============================
+# YOUTUBE CREDENTIALS
+# ===============================
+
+CLIENT_ID = "CLIENT_ID"
+CLIENT_SECRET = "CLIENT_SECRET"
+REFRESH_TOKEN = "REFRESH_TOKEN"
+
+# ===============================
 # UTILITIES
 # ===============================
 
 def ease_in_out(t):
     return 0.5 - 0.5 * np.cos(np.pi * t)
+
+# ===============================
+# YOUTUBE UPLOAD
+# ===============================
+
+def upload_to_youtube(video_path, quote):
+    creds = Credentials(
+        None,
+        refresh_token=REFRESH_TOKEN,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        scopes=["https://www.googleapis.com/auth/youtube.upload"],
+    )
+
+    youtube = build("youtube", "v3", credentials=creds)
+
+    title = f"{quote[:80]} #shorts"
+    description = f"{quote}\n\n#shorts #motivation #sigma #mindset"
+    tags = ["shorts", "motivation", "sigma", "mindset"]
+
+    request = youtube.videos().insert(
+        part="snippet,status",
+        body={
+            "snippet": {
+                "title": title,
+                "description": description,
+                "tags": tags,
+                "categoryId": "22"
+            },
+            "status": {
+                "privacyStatus": "public",
+                "selfDeclaredMadeForKids": False
+            }
+        },
+        media_body=MediaFileUpload(
+            str(video_path),
+            mimetype="video/mp4",
+            resumable=True
+        )
+    )
+
+    response = request.execute()
+    print("🚀 Uploaded to YouTube!")
+    print("🎬 Video ID:", response["id"])
 
 # ===============================
 # QUOTE
@@ -43,9 +101,6 @@ def ease_in_out(t):
 def load_quote():
     with open(QUOTE_FILE, "r", encoding="utf-8") as f:
         quotes = [q.strip() for q in f if q.strip()]
-
-    if not quotes:
-        raise ValueError("No quotes left")
 
     quote = random.choice(quotes)
     quotes.remove(quote)
@@ -61,11 +116,7 @@ def load_quote():
 # ===============================
 
 def load_background_image():
-    images = list(BACKGROUND_DIR.glob("*.*"))
-    if not images:
-        raise FileNotFoundError("No images in Background_images")
-
-    img = Image.open(random.choice(images)).convert("RGB")
+    img = Image.open(random.choice(list(BACKGROUND_DIR.glob("*.*")))).convert("RGB")
 
     img_ratio = img.width / img.height
     target_ratio = VIDEO_WIDTH / VIDEO_HEIGHT
@@ -105,76 +156,28 @@ def ken_burns_frame(img, idx, total, zoom_end, pan_x, pan_y):
 # TEXT
 # ===============================
 
-def wrap_text(draw, text, font, max_width):
-    words = text.split()
-    lines = []
-    while words:
-        line = ""
-        while words and draw.textbbox((0,0), line + words[0], font=font)[2] < max_width:
-            line += words.pop(0) + " "
-        lines.append(line.strip())
-    return lines
-
 def draw_typewriter_text(img, text, frame_idx):
     draw = ImageDraw.Draw(img)
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
 
     visible = text[:frame_idx * TYPE_SPEED]
-    lines = wrap_text(draw, visible, font, VIDEO_WIDTH * 0.8)
+    bbox = draw.textbbox((0,0), visible, font=font)
 
-    total_h = sum(draw.textbbox((0,0), l, font=font)[3] for l in lines)
-    y = (VIDEO_HEIGHT - total_h) // 2
+    x = (VIDEO_WIDTH - (bbox[2]-bbox[0])) // 2
+    y = VIDEO_HEIGHT // 2
 
-    for line in lines:
-        bbox = draw.textbbox((0,0), line, font=font)
-        x = (VIDEO_WIDTH - (bbox[2]-bbox[0])) // 2
-        draw.text((x+3, y+3), line, font=font, fill=(0,0,0))
-        draw.text((x, y), line, font=font, fill=(255,255,255))
-        y += (bbox[3]-bbox[1]) + 10
+    draw.text((x+3, y+3), visible, font=font, fill=(0,0,0))
+    draw.text((x, y), visible, font=font, fill=(255,255,255))
 
 # ===============================
-# FADE
-# ===============================
-
-def apply_fade(frame, idx, total):
-    alpha = min((idx+1)/FADE_FRAMES, (total-idx)/FADE_FRAMES, 1)
-    return cv2.addWeighted(frame, alpha, np.zeros_like(frame), 1-alpha, 0)
-
-# ===============================
-# LOAD MERGE VIDEO
-# ===============================
-
-def load_merge_video_frames():
-    videos = list(MERGE_VIDEO_DIR.glob("*.mp4"))
-    if not videos:
-        raise FileNotFoundError("No videos in out/ folder")
-
-    cap = cv2.VideoCapture(str(random.choice(videos)))
-    frames = []
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frame = cv2.resize(frame, (VIDEO_WIDTH, VIDEO_HEIGHT))
-        frames.append(frame)
-
-    cap.release()
-    return frames
-
-# ===============================
-# ADD BACKGROUND MUSIC
+# MUSIC
 # ===============================
 
 def add_background_music(video_path):
-    music_files = list(MUSIC_DIR.glob("*.*"))
-    if not music_files:
-        raise FileNotFoundError("No music files in Background_Music")
-
-    music = random.choice(music_files)
+    music = random.choice(list(MUSIC_DIR.glob("*.*")))
     final_path = video_path.with_name(video_path.stem + "_music.mp4")
 
-    cmd = [
+    subprocess.run([
         "ffmpeg", "-y",
         "-i", str(video_path),
         "-stream_loop", "-1",
@@ -182,16 +185,14 @@ def add_background_music(video_path):
         "-shortest",
         "-c:v", "copy",
         "-c:a", "aac",
-        "-b:a", "192k",
         str(final_path)
-    ]
+    ], check=True)
 
-    subprocess.run(cmd, check=True)
-    video_path.unlink()  # remove no-audio version
+    video_path.unlink()
     return final_path
 
 # ===============================
-# CREATE FINAL VIDEO
+# CREATE VIDEO
 # ===============================
 
 def create_video():
@@ -199,9 +200,7 @@ def create_video():
     bg = load_background_image()
     zoom_end, pan_x, pan_y = prepare_ken_burns()
 
-    quote_frames = SCENE_DURATION * FPS
-    merge_frames = load_merge_video_frames()
-
+    total_frames = SCENE_DURATION * FPS
     temp_video = OUTPUT_DIR / f"temp_{uuid.uuid4().hex}.mp4"
 
     writer = cv2.VideoWriter(
@@ -211,21 +210,18 @@ def create_video():
         (VIDEO_WIDTH, VIDEO_HEIGHT)
     )
 
-    for i in range(quote_frames):
-        img = ken_burns_frame(bg, i, quote_frames, zoom_end, pan_x, pan_y)
+    for i in range(total_frames):
+        img = ken_burns_frame(bg, i, total_frames, zoom_end, pan_x, pan_y)
         draw_typewriter_text(img, quote, i)
-
         frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-        frame = apply_fade(frame, i, quote_frames)
-        writer.write(frame)
-
-    for frame in merge_frames:
         writer.write(frame)
 
     writer.release()
 
     final_video = add_background_music(temp_video)
-    print("🎵 Final video with music created:", final_video)
+    print("🎵 Video ready:", final_video)
+
+    upload_to_youtube(final_video, quote)
 
 # ===============================
 # RUN
