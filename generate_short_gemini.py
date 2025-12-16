@@ -6,6 +6,7 @@ from pathlib import Path
 import random
 import uuid
 import subprocess
+import textwrap
 
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -14,7 +15,6 @@ from google.oauth2.credentials import Credentials
 # ===============================
 # CONFIG
 # ===============================
-
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -30,6 +30,7 @@ SCENE_DURATION = 5
 QUOTE_FILE = "quotes.txt"
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_SIZE = 80
+MAX_TEXT_WIDTH = VIDEO_WIDTH - 100  # leave padding
 
 FADE_FRAMES = 15
 TYPE_SPEED = 2
@@ -37,7 +38,6 @@ TYPE_SPEED = 2
 # ===============================
 # YOUTUBE CREDENTIALS
 # ===============================
-
 CLIENT_ID = "193654836130-ete2tqnm52un70bnj5ahfp23qlpt4g5u.apps.googleusercontent.com"
 CLIENT_SECRET = "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"
 REFRESH_TOKEN = "1//0gT9zWzMp_ABrCgYIARAAGBASNwF-L9IrujGKCmb2P2pIpKsH8gf4Av2p90dDCbRWnD3vJZfIX7fvgHViK0yAmQLYZiBOYmfT_r8"
@@ -45,14 +45,26 @@ REFRESH_TOKEN = "1//0gT9zWzMp_ABrCgYIARAAGBASNwF-L9IrujGKCmb2P2pIpKsH8gf4Av2p90d
 # ===============================
 # UTILITIES
 # ===============================
-
 def ease_in_out(t):
     return 0.5 - 0.5 * np.cos(np.pi * t)
+
+def wrap_text(text, font, max_width):
+    """Wrap text so it fits within max_width."""
+    lines = []
+    words = text.split()
+    while words:
+        line = ""
+        while words:
+            if font.getsize(line + words[0])[0] <= max_width:
+                line += (words.pop(0) + " ")
+            else:
+                break
+        lines.append(line.strip())
+    return lines
 
 # ===============================
 # YOUTUBE UPLOAD
 # ===============================
-
 def upload_to_youtube(video_path, quote):
     creds = Credentials(
         None,
@@ -65,9 +77,13 @@ def upload_to_youtube(video_path, quote):
 
     youtube = build("youtube", "v3", credentials=creds)
 
-    title = f"{quote[:80]} #shorts"
-    description = f"{quote}\n\n#shorts #motivation #sigma #mindset"
-    tags = ["shorts", "motivation", "sigma", "mindset"]
+    # Title: max 3 words + emoji
+    emojis = ["💪", "🧠", "🔥", "⚡", "🚀"]
+    title_words = quote.split()[:3]
+    title = " ".join(title_words) + " " + random.choice(emojis)
+
+    description = f"{quote}\n\n#shorts #motivation #sigma #mindset #quote"
+    tags = ["shorts", "motivation", "sigma", "mindset", "quote"]
 
     request = youtube.videos().insert(
         part="snippet,status",
@@ -97,7 +113,6 @@ def upload_to_youtube(video_path, quote):
 # ===============================
 # QUOTE
 # ===============================
-
 def load_quote():
     with open(QUOTE_FILE, "r", encoding="utf-8") as f:
         quotes = [q.strip() for q in f if q.strip()]
@@ -114,7 +129,6 @@ def load_quote():
 # ===============================
 # BACKGROUND IMAGE
 # ===============================
-
 def load_background_image():
     img = Image.open(random.choice(list(BACKGROUND_DIR.glob("*.*")))).convert("RGB")
 
@@ -135,7 +149,6 @@ def load_background_image():
 # ===============================
 # KEN BURNS
 # ===============================
-
 def prepare_ken_burns():
     return random.uniform(1.1, 1.2), random.choice([0, 0.5, 1]), random.choice([0, 0.5, 1])
 
@@ -155,24 +168,27 @@ def ken_burns_frame(img, idx, total, zoom_end, pan_x, pan_y):
 # ===============================
 # TEXT
 # ===============================
-
 def draw_typewriter_text(img, text, frame_idx):
     draw = ImageDraw.Draw(img)
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
 
-    visible = text[:frame_idx * TYPE_SPEED]
-    bbox = draw.textbbox((0,0), visible, font=font)
+    visible_text = text[:frame_idx * TYPE_SPEED]
+    lines = wrap_text(visible_text, font, MAX_TEXT_WIDTH)
 
-    x = (VIDEO_WIDTH - (bbox[2]-bbox[0])) // 2
-    y = VIDEO_HEIGHT // 2
+    total_height = sum([font.getsize(line)[1] for line in lines])
+    y = (VIDEO_HEIGHT - total_height) // 2
 
-    draw.text((x+3, y+3), visible, font=font, fill=(0,0,0))
-    draw.text((x, y), visible, font=font, fill=(255,255,255))
+    for line in lines:
+        line_width, line_height = font.getsize(line)
+        x = (VIDEO_WIDTH - line_width) // 2
+        # Shadow
+        draw.text((x+3, y+3), line, font=font, fill=(0,0,0))
+        draw.text((x, y), line, font=font, fill=(255,255,255))
+        y += line_height
 
 # ===============================
 # MUSIC
 # ===============================
-
 def add_background_music(video_path):
     music = random.choice(list(MUSIC_DIR.glob("*.*")))
     final_path = video_path.with_name(video_path.stem + "_music.mp4")
@@ -194,7 +210,6 @@ def add_background_music(video_path):
 # ===============================
 # CREATE VIDEO
 # ===============================
-
 def create_video():
     quote = load_quote()
     bg = load_background_image()
@@ -226,6 +241,5 @@ def create_video():
 # ===============================
 # RUN
 # ===============================
-
 if __name__ == "__main__":
     create_video()
