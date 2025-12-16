@@ -20,6 +20,8 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 BACKGROUND_DIR = Path("Background_images")
 MERGE_VIDEO_DIR = Path("out")
+MERGE_VIDEO_DIR.mkdir(exist_ok=True)
+
 MUSIC_DIR = Path("Background_Music")
 
 VIDEO_WIDTH = 1080
@@ -65,14 +67,13 @@ def upload_to_youtube(video_path, quote):
 
     youtube = build("youtube", "v3", credentials=creds)
 
-    # --- TITLE FIX: 3 words + emojis + hashtags
     words = quote.split()
     title_words = words[:3]
     emojis = ["💪","🔥","🧠","✨","⚡"]
     hashtags = "#shorts #motivation #sigma #mindset"
     title = " ".join(title_words) + " " + random.choice(emojis) + " " + hashtags
-    
-    description = quote  # now only the quote itself
+
+    description = quote
     tags = ["shorts", "motivation", "sigma", "mindset"]
 
     request = youtube.videos().insert(
@@ -159,7 +160,7 @@ def ken_burns_frame(img, idx, total, zoom_end, pan_x, pan_y):
     return crop.resize((VIDEO_WIDTH, VIDEO_HEIGHT), Image.LANCZOS)
 
 # ===============================
-# TEXT (FIXED)
+# TEXT
 # ===============================
 
 def wrap_text(draw, text, font, max_width):
@@ -212,6 +213,36 @@ def add_background_music(video_path):
     return final_path
 
 # ===============================
+# MERGE WITH OUT VIDEO (NEW)
+# ===============================
+
+def merge_with_out_video(main_video):
+    out_videos = list(MERGE_VIDEO_DIR.glob("*.mp4"))
+    if not out_videos:
+        return main_video
+
+    outro = random.choice(out_videos)
+    merged_path = main_video.with_name(main_video.stem + "_merged.mp4")
+
+    list_file = OUTPUT_DIR / "merge_list.txt"
+    with open(list_file, "w") as f:
+        f.write(f"file '{main_video.resolve()}'\n")
+        f.write(f"file '{outro.resolve()}'\n")
+
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", str(list_file),
+        "-c", "copy",
+        str(merged_path)
+    ], check=True)
+
+    main_video.unlink()
+    list_file.unlink()
+    return merged_path
+
+# ===============================
 # CREATE VIDEO
 # ===============================
 
@@ -239,8 +270,9 @@ def create_video():
     writer.release()
 
     final_video = add_background_music(temp_video)
-    print("🎵 Video ready:", final_video)
+    final_video = merge_with_out_video(final_video)
 
+    print("🎬 Final merged video ready:", final_video)
     upload_to_youtube(final_video, quote)
 
 # ===============================
