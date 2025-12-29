@@ -11,6 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 from gtts import gTTS
 import uuid
 import os
+import sys
 
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -37,9 +38,13 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 # ============== YOUTUBE AUTH ==============
 
-CLIENT_ID = os.environ["YT_CLIENT_ID"]
-CLIENT_SECRET = os.environ["YT_CLIENT_SECRET"]
-REFRESH_TOKEN = os.environ["YT_REFRESH_TOKEN"]
+CLIENT_ID = os.environ.get("YT_CLIENT_ID")
+CLIENT_SECRET = os.environ.get("YT_CLIENT_SECRET")
+REFRESH_TOKEN = os.environ.get("YT_REFRESH_TOKEN")
+
+if not CLIENT_ID or not CLIENT_SECRET or not REFRESH_TOKEN:
+    print("❌ Missing YouTube credentials. Set YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN.")
+    sys.exit(1)
 
 # ================= OCR ====================
 
@@ -64,7 +69,6 @@ def draw_caption(img, text):
 
     words = text.split()
     lines, line = [], ""
-
     for w in words:
         test = f"{line} {w}".strip()
         if draw.textlength(test, font) < VIDEO_WIDTH * 0.8:
@@ -91,10 +95,15 @@ def create_video(thumb, bg, outtro, voice_text):
     voice_path = OUTPUT_DIR / "voice.mp3"
 
     generate_voice(voice_text, voice_path)
-    duration = int(subprocess.check_output(
-        ["ffprobe", "-v", "error", "-show_entries",
-         "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", voice_path]
-    ).decode().strip().split(".")[0])
+
+    try:
+        duration = int(float(subprocess.check_output(
+            ["ffprobe", "-v", "error", "-show_entries",
+             "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", voice_path]
+        ).decode().strip()))
+    except Exception as e:
+        print("❌ Failed to get voice duration:", e)
+        duration = max(len(voice_text.split()) // 2, 5)  # fallback
 
     writer = cv2.VideoWriter(
         str(video_path),
@@ -103,19 +112,19 @@ def create_video(thumb, bg, outtro, voice_text):
         (VIDEO_WIDTH, VIDEO_HEIGHT)
     )
 
-    # Thumbnail
+    # --- Thumbnail
     thumb_img = resize(Image.open(thumb))
     for _ in range(THUMB_DURATION * FPS):
         writer.write(cv2.cvtColor(np.array(thumb_img), cv2.COLOR_RGB2BGR))
 
-    # Main scene
+    # --- Main scene
     bg_img = resize(Image.open(bg))
     for _ in range(duration * FPS):
         frame = bg_img.copy()
         draw_caption(frame, voice_text)
         writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
 
-    # Outtro
+    # --- Outtro
     outtro_img = resize(Image.open(outtro))
     for _ in range(OUTTRO_DURATION * FPS):
         writer.write(cv2.cvtColor(np.array(outtro_img), cv2.COLOR_RGB2BGR))
@@ -138,38 +147,50 @@ def create_video(thumb, bg, outtro, voice_text):
 # ================= UPLOAD =================
 
 def upload(video, title, description):
-    creds = Credentials(
-        None,
-        refresh_token=REFRESH_TOKEN,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
-        scopes=["https://www.googleapis.com/auth/youtube.upload"]
-    )
+    try:
+        creds = Credentials(
+            None,
+            refresh_token=REFRESH_TOKEN,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            scopes=["https://www.googleapis.com/auth/youtube.upload"]
+        )
 
-    youtube = build("youtube", "v3", credentials=creds)
+        youtube = build("youtube", "v3", credentials=creds)
 
-    youtube.videos().insert(
-        part="snippet,status",
-        body={
-            "snippet": {
-                "title": title,
-                "description": description + "\n\n#motivation #success #mindset",
-                "categoryId": "22"
+        request = youtube.videos().insert(
+            part="snippet,status",
+            body={
+                "snippet": {
+                    "title": title,
+                    "description": description + "\n\n#motivation #success #mindset",
+                    "categoryId": "22"
+                },
+                "status": {"privacyStatus": "public"}
             },
-            "status": {"privacyStatus": "public"}
-        },
-        media_body=MediaFileUpload(video, resumable=True)
-    ).execute()
+            media_body=MediaFileUpload(video, resumable=True)
+        )
+
+        response = request.execute()
+        print("✅ Upload successful! Video ID:", response.get("id"))
+
+    except Exception as e:
+        print("❌ Failed to upload video:", e)
 
 # ================= MAIN ===================
 
 def main():
-    df = pd.read_csv(SCRIPT_CSV, encoding='latin1')
+    try:
+        df = pd.read_csv(SCRIPT_CSV, encoding='latin1')
+    except Exception as e:
+        print("❌ Failed to read CSV:", e)
+        return
+
+    uploaded = False
 
     for thumb in THUMB_DIR.glob("*"):
         img_text = extract_text_from_image(thumb)
-
         match = df[df["Title"].str.lower() == img_text.lower()]
         if match.empty:
             continue
@@ -178,14 +199,22 @@ def main():
         bg = random.choice(list(BG_DIR.glob("*")))
         outtro = random.choice(list(OUTTRO_DIR.glob("*")))
 
+        print(f"🎬 Creating video for title: {row['Title']}")
         video = create_video(thumb, bg, outtro, row["Voiceover Text"])
+
+        print("📤 Uploading video...")
         upload(video, row["Title"], row["Voiceover Text"])
 
-        # Cleanup
+        # --- Cleanup
         df = df.drop(row.name)
         thumb.unlink()
         df.to_csv(SCRIPT_CSV, index=False)
-        break
+
+        uploaded = True
+        break  # only one video per run
+
+    if not uploaded:
+        print("⚠ No matching titles found in thumbnails/CSV. Nothing uploaded.")
 
 if __name__ == "__main__":
     main()
