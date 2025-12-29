@@ -165,7 +165,7 @@ def upload(video, title, description):
 # ================= MAIN ===================
 
 def main():
-    df = pd.read_csv(SCRIPT_CSV)
+    df = pd.read_csv(SCRIPT_CSV, encoding='latin1')
 
     for thumb in THUMB_DIR.glob("*"):
         img_text = extract_text_from_image(thumb)
