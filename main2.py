@@ -81,16 +81,6 @@ def ken_burns_frame(img, idx, total, zoom_end, pan_x, pan_y):
     crop = img.crop((x, y, x + cw, y + ch))
     return crop.resize((VIDEO_WIDTH, VIDEO_HEIGHT), Image.LANCZOS)
 
-def wrap_text(draw, text, font, max_width):
-    words = text.split()
-    lines = []
-    while words:
-        line = ""
-        while words and draw.textlength(line + words[0] + " ", font=font) < max_width:
-            line += words.pop(0) + " "
-        lines.append(line.strip())
-    return lines
-
 def get_caption_text(full_text):
     sentences = full_text.replace("?", ".").replace("!", ".").split(".")
     sentences = [s.strip() for s in sentences if s.strip()]
@@ -99,21 +89,23 @@ def get_caption_text(full_text):
         caption += "."
     return caption
 
-def draw_typewriter_text(img, text, frame_idx, total_frames):
+def draw_caption(img, text, alpha=1.0):
+    """Draw caption with optional fade effect."""
     draw = ImageDraw.Draw(img)
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
-    # Only display first 2 sentences
-    text = get_caption_text(text)
-    num_chars = int(len(text) * frame_idx / total_frames)
-    visible_text = text[:num_chars]
-    lines = wrap_text(draw, visible_text, font, VIDEO_WIDTH * 0.8)
+    lines = text.split(". ")
     total_h = sum(font.getbbox(l)[3] for l in lines) + 10 * len(lines)
     y = (VIDEO_HEIGHT - total_h) // 2
     for l in lines:
+        l = l.strip()
+        if not l:
+            continue
         w = draw.textlength(l, font)
         x = (VIDEO_WIDTH - w) // 2
-        draw.text((x+3, y+3), l, font=font, fill="black")
-        draw.text((x, y), l, font=font, fill="white")
+        # draw shadow
+        draw.text((x+3, y+3), l, font=font, fill=(0,0,0,int(255*alpha)))
+        # draw main text
+        draw.text((x, y), l, font=font, fill=(255,255,255,int(255*alpha)))
         y += font.getbbox(l)[3] + 10
 
 # ================= VIDEO CREATION =================
@@ -160,9 +152,20 @@ def create_video(row):
     # --- Main scene
     bg_img = resize(Image.open(bg_file))
     zoom_end, pan_x, pan_y = prepare_ken_burns(bg_img)
+    caption_text = get_caption_text(row['Voiceover Text'])
+
     for i in range(total_frames):
         frame = ken_burns_frame(bg_img, i, total_frames, zoom_end, pan_x, pan_y)
-        draw_typewriter_text(frame, row['Voiceover Text'], i, total_frames)
+        # Simple fade-in/out animation for caption
+        fade_in_frames = int(0.1 * total_frames)
+        fade_out_frames = int(0.1 * total_frames)
+        if i < fade_in_frames:
+            alpha = i / fade_in_frames
+        elif i > total_frames - fade_out_frames:
+            alpha = (total_frames - i) / fade_out_frames
+        else:
+            alpha = 1.0
+        draw_caption(frame, caption_text, alpha)
         writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
 
     # --- Animated outro
