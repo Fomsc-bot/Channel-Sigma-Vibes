@@ -27,7 +27,6 @@ THUMB_DURATION = 1        # seconds
 OUTTRO_DURATION = 2       # seconds
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_SIZE = 60
-CAPTION_SENTENCES = 2      # number of sentences to display in caption
 
 THUMB_DIR = Path("thumbnails")
 BG_DIR = Path("backgroundim")
@@ -81,14 +80,6 @@ def ken_burns_frame(img, idx, total, zoom_end, pan_x, pan_y):
     crop = img.crop((x, y, x + cw, y + ch))
     return crop.resize((VIDEO_WIDTH, VIDEO_HEIGHT), Image.LANCZOS)
 
-def get_caption_text(full_text):
-    sentences = full_text.replace("?", ".").replace("!", ".").split(".")
-    sentences = [s.strip() for s in sentences if s.strip()]
-    caption = ". ".join(sentences[:CAPTION_SENTENCES])
-    if not caption.endswith("."):
-        caption += "."
-    return caption
-
 def draw_caption(img, text, alpha=1.0):
     """Draw caption in middle with optional fade effect."""
     draw = ImageDraw.Draw(img)
@@ -125,38 +116,39 @@ def create_video(row):
     bg_file = random.choice(list(BG_DIR.glob("*")))
     outtro_file = random.choice(list(OUTTRO_DIR.glob("*")))
 
-    # --- Generate TTS for multiple lines ---
-    tts_text = get_caption_text(row['Voiceover Text'])
+    # --- Split sentences and generate TTS ---
+    full_text = row['Voiceover Text']
+    sentences = [s.strip() for s in full_text.replace("?", ".").replace("!", ".").split(".") if s.strip()]
     tts_files = []
-    # Split sentences for safer TTS chunks
-    sentences = tts_text.split(". ")
+    sentence_durations = []
     for i, s in enumerate(sentences):
         tts_path = OUTPUT_DIR / f"{uuid.uuid4().hex}_tts_{i}.mp3"
         generate_voice(s, tts_path)
+        # get duration
+        try:
+            dur = float(subprocess.check_output([
+                "ffprobe","-v","error","-show_entries",
+                "format=duration","-of",
+                "default=noprint_wrappers=1:nokey=1", str(tts_path)
+            ]).decode().strip())
+        except:
+            dur = max(len(s.split())/2, 1)
         tts_files.append(tts_path)
+        sentence_durations.append(dur)
 
-    # --- Merge TTS MP3s into one audio ---
+    # --- Merge TTS audio for final video ---
     merged_audio = OUTPUT_DIR / f"{uuid.uuid4().hex}_merged.mp3"
     with open(OUTPUT_DIR / "tts_list.txt", "w") as f:
         for t in tts_files:
             f.write(f"file '{t.resolve()}'\n")
     subprocess.run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "ffmpeg","-y","-f","concat","-safe","0",
         "-i", str(OUTPUT_DIR / "tts_list.txt"),
-        "-c", "copy", str(merged_audio)
+        "-c","copy", str(merged_audio)
     ], check=True)
 
-    # Get total duration
-    try:
-        duration = float(subprocess.check_output([
-            "ffprobe", "-v", "error", "-show_entries",
-            "format=duration", "-of",
-            "default=noprint_wrappers=1:nokey=1", str(merged_audio)
-        ]).decode().strip())
-    except:
-        duration = max(len(tts_text.split()) / 2, 5)
-
-    total_frames = int(duration * FPS)
+    total_duration = sum(sentence_durations)
+    total_frames = int(total_duration * FPS)
     writer_path = OUTPUT_DIR / f"{uuid.uuid4().hex}_temp.mp4"
     writer = cv2.VideoWriter(str(writer_path), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (VIDEO_WIDTH, VIDEO_HEIGHT))
 
@@ -169,19 +161,17 @@ def create_video(row):
     bg_img = resize(Image.open(bg_file))
     zoom_end, pan_x, pan_y = prepare_ken_burns(bg_img)
 
-    for i in range(total_frames):
-        frame = ken_burns_frame(bg_img, i, total_frames, zoom_end, pan_x, pan_y)
-        # fade-in/out caption
-        fade_in_frames = int(0.1 * total_frames)
-        fade_out_frames = int(0.1 * total_frames)
-        if i < fade_in_frames:
-            alpha = i / fade_in_frames
-        elif i > total_frames - fade_out_frames:
-            alpha = (total_frames - i) / fade_out_frames
-        else:
+    # Track sentence timing
+    frame_cursor = 0
+    for s, dur in zip(sentences, sentence_durations):
+        frames = int(dur * FPS)
+        for i in range(frames):
+            frame = ken_burns_frame(bg_img, frame_cursor + i, total_frames, zoom_end, pan_x, pan_y)
+            # optional fade
             alpha = 1.0
-        draw_caption(frame, tts_text, alpha)
-        writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
+            draw_caption(frame, s, alpha)
+            writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
+        frame_cursor += frames
 
     # --- Outro ---
     outtro_img = resize(Image.open(outtro_file))
@@ -196,11 +186,11 @@ def create_video(row):
     # --- Merge video with merged audio ---
     final_path = OUTPUT_DIR / f"{uuid.uuid4().hex}_final.mp4"
     subprocess.run([
-        "ffmpeg", "-y",
+        "ffmpeg","-y",
         "-i", str(writer_path),
         "-i", str(merged_audio),
-        "-c:v", "copy",
-        "-c:a", "aac",
+        "-c:v","copy",
+        "-c:a","aac",
         str(final_path)
     ], check=True)
 
