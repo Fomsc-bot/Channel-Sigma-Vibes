@@ -89,8 +89,8 @@ def get_caption_text(full_text):
         caption += "."
     return caption
 
-def draw_centered_caption(img, text, alpha=1.0):
-    """Draw caption in the middle of the video frame."""
+def draw_caption(img, text, alpha=1.0):
+    """Draw caption in middle with optional fade effect."""
     draw = ImageDraw.Draw(img)
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
     lines = text.split(". ")
@@ -102,14 +102,14 @@ def draw_centered_caption(img, text, alpha=1.0):
             continue
         w = draw.textlength(l, font)
         x = (VIDEO_WIDTH - w) // 2
-        draw.text((x + 3, y + 3), l, font=font, fill=(0, 0, 0, int(255 * alpha)))
-        draw.text((x, y), l, font=font, fill=(255, 255, 255, int(255 * alpha)))
+        draw.text((x+3, y+3), l, font=font, fill=(0,0,0,int(255*alpha)))  # shadow
+        draw.text((x, y), l, font=font, fill=(255,255,255,int(255*alpha)))  # main text
         y += font.getbbox(l)[3] + 10
 
 # ================= VIDEO CREATION =================
 
 def create_video(row):
-    # Thumbnail selection using fuzzy OCR
+    # --- Thumbnail selection ---
     thumb_file = None
     thumbnails = list(THUMB_DIR.glob("*"))
     if thumbnails:
@@ -125,26 +125,38 @@ def create_video(row):
     bg_file = random.choice(list(BG_DIR.glob("*")))
     outtro_file = random.choice(list(OUTTRO_DIR.glob("*")))
 
-    # --- Split voiceover into lines ---
-    lines = row['Voiceover Text'].split(". ")
+    # --- Generate TTS for multiple lines ---
+    tts_text = get_caption_text(row['Voiceover Text'])
     tts_files = []
-    durations = []
+    # Split sentences for safer TTS chunks
+    sentences = tts_text.split(". ")
+    for i, s in enumerate(sentences):
+        tts_path = OUTPUT_DIR / f"{uuid.uuid4().hex}_tts_{i}.mp3"
+        generate_voice(s, tts_path)
+        tts_files.append(tts_path)
 
-    for i, line in enumerate(lines):
-        tts_file = OUTPUT_DIR / f"{uuid.uuid4().hex}_tts_{i}.mp3"
-        generate_voice(line, tts_file)
-        tts_files.append(tts_file)
-        # get duration
-        try:
-            dur = float(subprocess.check_output([
-                "ffprobe","-v","error","-show_entries",
-                "format=duration","-of","default=noprint_wrappers=1:nokey=1", str(tts_file)
-            ]).decode().strip())
-        except:
-            dur = max(len(line.split()) / 2, 1)
-        durations.append(dur)
+    # --- Merge TTS MP3s into one audio ---
+    merged_audio = OUTPUT_DIR / f"{uuid.uuid4().hex}_merged.mp3"
+    with open(OUTPUT_DIR / "tts_list.txt", "w") as f:
+        for t in tts_files:
+            f.write(f"file '{t.resolve()}'\n")
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", str(OUTPUT_DIR / "tts_list.txt"),
+        "-c", "copy", str(merged_audio)
+    ], check=True)
 
-    total_frames = int(sum(durations) * FPS)
+    # Get total duration
+    try:
+        duration = float(subprocess.check_output([
+            "ffprobe", "-v", "error", "-show_entries",
+            "format=duration", "-of",
+            "default=noprint_wrappers=1:nokey=1", str(merged_audio)
+        ]).decode().strip())
+    except:
+        duration = max(len(tts_text.split()) / 2, 5)
+
+    total_frames = int(duration * FPS)
     writer_path = OUTPUT_DIR / f"{uuid.uuid4().hex}_temp.mp4"
     writer = cv2.VideoWriter(str(writer_path), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (VIDEO_WIDTH, VIDEO_HEIGHT))
 
@@ -153,44 +165,51 @@ def create_video(row):
     for _ in range(THUMB_DURATION * FPS):
         writer.write(cv2.cvtColor(np.array(thumb_img), cv2.COLOR_RGB2BGR))
 
-    # --- Main scene ---
+    # --- Main Scene ---
     bg_img = resize(Image.open(bg_file))
     zoom_end, pan_x, pan_y = prepare_ken_burns(bg_img)
 
-    frame_cursor = 0
-    for line, dur in zip(lines, durations):
-        start_frame = frame_cursor
-        end_frame = frame_cursor + int(dur * FPS)
-        for f in range(start_frame, end_frame):
-            frame = ken_burns_frame(bg_img, f, total_frames, zoom_end, pan_x, pan_y)
-            draw_centered_caption(frame, line)
-            writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
-        frame_cursor = end_frame
+    for i in range(total_frames):
+        frame = ken_burns_frame(bg_img, i, total_frames, zoom_end, pan_x, pan_y)
+        # fade-in/out caption
+        fade_in_frames = int(0.1 * total_frames)
+        fade_out_frames = int(0.1 * total_frames)
+        if i < fade_in_frames:
+            alpha = i / fade_in_frames
+        elif i > total_frames - fade_out_frames:
+            alpha = (total_frames - i) / fade_out_frames
+        else:
+            alpha = 1.0
+        draw_caption(frame, tts_text, alpha)
+        writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
 
-    # --- Animated outro ---
+    # --- Outro ---
     outtro_img = resize(Image.open(outtro_file))
     outro_frames = OUTTRO_DURATION * FPS
-    zoom_end_outtro, pan_x_out, pan_y_out = prepare_ken_burns(outtro_img)
+    zoom_end_out, pan_x_out, pan_y_out = prepare_ken_burns(outtro_img)
     for i in range(outro_frames):
-        frame = ken_burns_frame(outtro_img, i, outro_frames, zoom_end_outtro, pan_x_out, pan_y_out)
+        frame = ken_burns_frame(outtro_img, i, outro_frames, zoom_end_out, pan_x_out, pan_y_out)
         writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
 
     writer.release()
 
-    # --- Merge voice ---
+    # --- Merge video with merged audio ---
     final_path = OUTPUT_DIR / f"{uuid.uuid4().hex}_final.mp4"
     subprocess.run([
-        "ffmpeg", "-y", "-i", str(writer_path), "-i"
-        ] + [str(f) for f in tts_files] + [
-        "-filter_complex", f"[1:a][2:a]concat=n={len(tts_files)}:v=0:a=1[aout]",
-        "-map", "0:v", "-map", "[aout]",
-        "-c:v", "copy", "-c:a", "aac", str(final_path)
+        "ffmpeg", "-y",
+        "-i", str(writer_path),
+        "-i", str(merged_audio),
+        "-c:v", "copy",
+        "-c:a", "aac",
+        str(final_path)
     ], check=True)
 
-    # Cleanup
+    # --- Cleanup ---
     writer_path.unlink()
-    for f in tts_files:
-        f.unlink()
+    merged_audio.unlink()
+    (OUTPUT_DIR / "tts_list.txt").unlink()
+    for t in tts_files:
+        t.unlink()
     thumb_file.unlink()
 
     return final_path
@@ -199,7 +218,8 @@ def create_video(row):
 
 def upload(video_file, row):
     creds = Credentials(None, refresh_token=REFRESH_TOKEN, token_uri="https://oauth2.googleapis.com/token",
-                        client_id=CLIENT_ID, client_secret=CLIENT_SECRET, scopes=["https://www.googleapis.com/auth/youtube.upload"])
+                        client_id=CLIENT_ID, client_secret=CLIENT_SECRET,
+                        scopes=["https://www.googleapis.com/auth/youtube.upload"])
     youtube = build("youtube", "v3", credentials=creds)
     try:
         response = youtube.videos().insert(
@@ -235,6 +255,7 @@ def main():
     video_file = create_video(row)
     if video_file:
         upload(video_file, row)
+        # remove row from CSV
         df = df.drop(row.name)
         df.to_csv(SCRIPT_CSV, index=False)
     else:
