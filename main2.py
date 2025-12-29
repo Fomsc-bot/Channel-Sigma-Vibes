@@ -183,7 +183,7 @@ def create_video(row):
 # ================= MAIN =================
 
 def main():
-    df = pd.read_csv(SCRIPT_CSV)
+    df = pd.read_csv(SCRIPT_CSV, encoding="latin1")
     for _, row in df.iterrows():
         create_video(row)
 
