@@ -1,4 +1,4 @@
-now in the following code it displays and start the voiceover and the caption from the beginning of the video but i want it to start after the thumbnail image get dissaper. only change it do not change anything else. #!/usr/bin/env python3
+#!/usr/bin/env python3
 
 import cv2
 import numpy as np
