@@ -12,7 +12,6 @@ from gtts import gTTS
 import uuid
 import os
 import sys
-import math
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
@@ -28,6 +27,7 @@ THUMB_DURATION = 1        # seconds
 OUTTRO_DURATION = 2       # seconds
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_SIZE = 60
+CAPTION_SENTENCES = 2      # number of sentences to display in caption
 
 THUMB_DIR = Path("thumbnails")
 BG_DIR = Path("backgroundim")
@@ -49,13 +49,13 @@ if not CLIENT_ID or not CLIENT_SECRET or not REFRESH_TOKEN:
 # ================= UTILITIES =================
 
 def extract_text_from_image(img_path):
-    """Robust OCR to get text from thumbnail"""
     img = Image.open(img_path)
     text = pytesseract.image_to_string(img, lang="eng")
     text = " ".join(text.split())
     return text if text else "Double Meaning Quote"
 
 def generate_voice(text, out_path):
+    text = text.replace("’", "'").replace("‘", "'")
     tts = gTTS(text=text, lang="en")
     tts.save(out_path)
 
@@ -91,9 +91,19 @@ def wrap_text(draw, text, font, max_width):
         lines.append(line.strip())
     return lines
 
+def get_caption_text(full_text):
+    sentences = full_text.replace("?", ".").replace("!", ".").split(".")
+    sentences = [s.strip() for s in sentences if s.strip()]
+    caption = ". ".join(sentences[:CAPTION_SENTENCES])
+    if not caption.endswith("."):
+        caption += "."
+    return caption
+
 def draw_typewriter_text(img, text, frame_idx, total_frames):
     draw = ImageDraw.Draw(img)
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
+    # Only display first 2 sentences
+    text = get_caption_text(text)
     num_chars = int(len(text) * frame_idx / total_frames)
     visible_text = text[:num_chars]
     lines = wrap_text(draw, visible_text, font, VIDEO_WIDTH * 0.8)
@@ -109,10 +119,9 @@ def draw_typewriter_text(img, text, frame_idx, total_frames):
 # ================= VIDEO CREATION =================
 
 def create_video(row):
-    # --- Thumbnail selection: fuzzy OCR matching
+    # Thumbnail selection using fuzzy OCR
     thumb_file = None
     thumbnails = list(THUMB_DIR.glob("*"))
-    best_match = None
     if thumbnails:
         thumb_texts = [extract_text_from_image(f) for f in thumbnails]
         best_match, score = process.extractOne(row['Title'], thumb_texts)
@@ -129,7 +138,7 @@ def create_video(row):
 
     generate_voice(row['Voiceover Text'], voice_file)
 
-    # get duration of voice
+    # Voice duration
     try:
         duration = float(subprocess.check_output([
             "ffprobe","-v","error","-show_entries",
@@ -143,12 +152,12 @@ def create_video(row):
     writer_path = OUTPUT_DIR / f"{uuid.uuid4().hex}_temp.mp4"
     writer = cv2.VideoWriter(str(writer_path), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (VIDEO_WIDTH, VIDEO_HEIGHT))
 
-    # --- Thumbnail scene
+    # --- Thumbnail
     thumb_img = resize(Image.open(thumb_file))
     for _ in range(THUMB_DURATION * FPS):
         writer.write(cv2.cvtColor(np.array(thumb_img), cv2.COLOR_RGB2BGR))
 
-    # --- Main scene with Ken Burns + typewriter
+    # --- Main scene
     bg_img = resize(Image.open(bg_file))
     zoom_end, pan_x, pan_y = prepare_ken_burns(bg_img)
     for i in range(total_frames):
@@ -156,10 +165,13 @@ def create_video(row):
         draw_typewriter_text(frame, row['Voiceover Text'], i, total_frames)
         writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
 
-    # --- Outtro
+    # --- Animated outro
     outtro_img = resize(Image.open(outtro_file))
-    for _ in range(OUTTRO_DURATION * FPS):
-        writer.write(cv2.cvtColor(np.array(outtro_img), cv2.COLOR_RGB2BGR))
+    outro_frames = OUTTRO_DURATION * FPS
+    zoom_end_outtro, pan_x_out, pan_y_out = prepare_ken_burns(outtro_img)
+    for i in range(outro_frames):
+        frame = ken_burns_frame(outtro_img, i, outro_frames, zoom_end_outtro, pan_x_out, pan_y_out)
+        writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
 
     writer.release()
 
@@ -170,7 +182,7 @@ def create_video(row):
         "-c:v","copy","-c:a","aac", str(final_path)
     ], check=True)
 
-    # cleanup temp files
+    # Cleanup
     writer_path.unlink()
     voice_file.unlink()
     thumb_file.unlink()
