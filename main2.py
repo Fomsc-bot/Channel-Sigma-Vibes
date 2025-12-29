@@ -7,17 +7,18 @@ import pytesseract
 import random
 import subprocess
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 from gtts import gTTS
 import uuid
 import os
 import sys
+import textwrap
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 from fuzzywuzzy import process
 
-# ================= CONFIG =================
+# ================= ENHANCED CONFIG =================
 
 VIDEO_WIDTH = 1920
 VIDEO_HEIGHT = 1080
@@ -26,7 +27,18 @@ FPS = 30
 THUMB_DURATION = 1        # seconds
 OUTTRO_DURATION = 2       # seconds
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-FONT_SIZE = 60
+MIN_FONT_SIZE = 40
+MAX_FONT_SIZE = 70
+LINE_SPACING = 15
+MAX_LINE_WIDTH = 1600     # Prevent text from reaching edges
+TEXT_PADDING = 100        # Padding from screen edges
+
+# Visual enhancements
+BACKGROUND_BLUR_RADIUS = 15
+TEXT_BACKGROUND_OPACITY = 0.7
+SHADOW_OFFSET = (4, 4)
+SHADOW_BLUR = 6
+ANIMATION_DURATION = 0.5  # seconds for fade in/out
 
 THUMB_DIR = Path("thumbnails")
 BG_DIR = Path("backgroundim")
@@ -45,7 +57,7 @@ if not CLIENT_ID or not CLIENT_SECRET or not REFRESH_TOKEN:
     print("❌ Missing YouTube credentials. Set YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN.")
     sys.exit(1)
 
-# ================= UTILITIES =================
+# ================= ENHANCED UTILITIES =================
 
 def extract_text_from_image(img_path):
     img = Image.open(img_path)
@@ -80,22 +92,184 @@ def ken_burns_frame(img, idx, total, zoom_end, pan_x, pan_y):
     crop = img.crop((x, y, x + cw, y + ch))
     return crop.resize((VIDEO_WIDTH, VIDEO_HEIGHT), Image.LANCZOS)
 
-def draw_caption(img, text, alpha=1.0):
-    """Draw caption in middle with optional fade effect."""
+def get_optimal_font_size(text, max_width, max_height, font_path):
+    """Dynamically adjust font size to fit text within bounds"""
+    font_size = MAX_FONT_SIZE
+    
+    # Split into sentences first
+    sentences = [s.strip() for s in text.replace("?", ".").replace("!", ".").split(".") if s.strip()]
+    if not sentences:
+        return FONT_PATH, FONT_SIZE, []
+    
+    # Adjust font size until text fits
+    for size in range(MAX_FONT_SIZE, MIN_FONT_SIZE - 1, -2):
+        font = ImageFont.truetype(font_path, size)
+        wrapped_lines = []
+        total_height = 0
+        fits = True
+        
+        for sentence in sentences:
+            # Wrap each sentence
+            words = sentence.split()
+            lines = []
+            current_line = []
+            
+            for word in words:
+                test_line = ' '.join(current_line + [word])
+                bbox = font.getbbox(test_line)
+                if bbox[2] - bbox[0] <= max_width:
+                    current_line.append(word)
+                else:
+                    if current_line:
+                        lines.append(' '.join(current_line))
+                    current_line = [word]
+            
+            if current_line:
+                lines.append(' '.join(current_line))
+            
+            # Check if lines fit vertically
+            for line in lines:
+                bbox = font.getbbox(line)
+                line_height = bbox[3] - bbox[1] + LINE_SPACING
+                total_height += line_height
+                if total_height > max_height:
+                    fits = False
+                    break
+            
+            if not fits:
+                break
+            wrapped_lines.extend(lines)
+        
+        if fits:
+            return font, size, wrapped_lines
+    
+    # If even minimum doesn't fit, truncate
+    font = ImageFont.truetype(font_path, MIN_FONT_SIZE)
+    return font, MIN_FONT_SIZE, ["Text too long to display..."]
+
+def create_text_background(size, text_bbox, padding=20, opacity=0.7):
+    """Create a blurred background behind text for better readability"""
+    # Create a blank image with alpha channel
+    bg = Image.new('RGBA', size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(bg)
+    
+    # Draw rounded rectangle behind text
+    x0 = text_bbox[0] - padding
+    y0 = text_bbox[1] - padding
+    x1 = text_bbox[2] + padding
+    y1 = text_bbox[3] + padding
+    
+    # Create rounded rectangle
+    radius = 20
+    draw.rectangle([x0, y0 + radius, x1, y1 - radius], fill=(0, 0, 0, int(255 * opacity)))
+    draw.rectangle([x0 + radius, y0, x1 - radius, y1], fill=(0, 0, 0, int(255 * opacity)))
+    draw.pieslice([x0, y0, x0 + radius * 2, y0 + radius * 2], 180, 270, fill=(0, 0, 0, int(255 * opacity)))
+    draw.pieslice([x1 - radius * 2, y0, x1, y0 + radius * 2], 270, 360, fill=(0, 0, 0, int(255 * opacity)))
+    draw.pieslice([x0, y1 - radius * 2, x0 + radius * 2, y1], 90, 180, fill=(0, 0, 0, int(255 * opacity)))
+    draw.pieslice([x1 - radius * 2, y1 - radius * 2, x1, y1], 0, 90, fill=(0, 0, 0, int(255 * opacity)))
+    
+    return bg
+
+def draw_caption(img, text, alpha=1.0, animation_progress=1.0):
+    """Enhanced caption drawing with proper wrapping and visual effects"""
+    # Convert to RGBA for transparency support
+    if img.mode != 'RGBA':
+        img = img.convert('RGBA')
+    
+    # Create a copy for drawing
+    draw_img = img.copy()
+    draw = ImageDraw.Draw(draw_img)
+    
+    # Calculate available space
+    max_width = VIDEO_WIDTH - (2 * TEXT_PADDING)
+    max_height = VIDEO_HEIGHT - (2 * TEXT_PADDING)
+    
+    # Get optimal font and wrapped lines
+    font, font_size, wrapped_lines = get_optimal_font_size(
+        text, max_width, max_height, FONT_PATH
+    )
+    
+    if not wrapped_lines:
+        return img
+    
+    # Calculate total text block dimensions
+    line_heights = []
+    line_widths = []
+    for line in wrapped_lines:
+        bbox = font.getbbox(line)
+        line_heights.append(bbox[3] - bbox[1])
+        line_widths.append(bbox[2] - bbox[0])
+    
+    total_height = sum(line_heights) + (len(wrapped_lines) - 1) * LINE_SPACING
+    max_line_width = max(line_widths)
+    
+    # Center the text block
+    start_y = (VIDEO_HEIGHT - total_height) // 2
+    text_bbox = [
+        (VIDEO_WIDTH - max_line_width) // 2,  # left
+        start_y,  # top
+        (VIDEO_WIDTH + max_line_width) // 2,  # right
+        start_y + total_height  # bottom
+    ]
+    
+    # Apply animation (fade in/out)
+    animated_alpha = alpha * animation_progress
+    
+    # Create and apply text background
+    text_bg = create_text_background(
+        (VIDEO_WIDTH, VIDEO_HEIGHT),
+        text_bbox,
+        padding=30,
+        opacity=TEXT_BACKGROUND_OPACITY * animated_alpha
+    )
+    
+    # Apply Gaussian blur to background for depth
+    blurred_bg = text_bg.filter(ImageFilter.GaussianBlur(BACKGROUND_BLUR_RADIUS))
+    img = Image.alpha_composite(img, blurred_bg)
     draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
-    lines = text.split(". ")
-    total_h = sum(font.getbbox(l)[3] for l in lines) + 10 * len(lines)
-    y = (VIDEO_HEIGHT - total_h) // 2
-    for l in lines:
-        l = l.strip()
-        if not l:
-            continue
-        w = draw.textlength(l, font)
-        x = (VIDEO_WIDTH - w) // 2
-        draw.text((x+3, y+3), l, font=font, fill=(0,0,0,int(255*alpha)))  # shadow
-        draw.text((x, y), l, font=font, fill=(255,255,255,int(255*alpha)))  # main text
-        y += font.getbbox(l)[3] + 10
+    
+    # Draw each line with shadow effect
+    current_y = start_y
+    for i, line in enumerate(wrapped_lines):
+        bbox = font.getbbox(line)
+        line_width = bbox[2] - bbox[0]
+        x = (VIDEO_WIDTH - line_width) // 2
+        
+        # Draw shadow with gradient opacity
+        shadow_alpha = int(100 * animated_alpha)
+        for offset_x in range(SHADOW_OFFSET[0] + 1):
+            for offset_y in range(SHADOW_OFFSET[1] + 1):
+                if offset_x == 0 and offset_y == 0:
+                    continue
+                draw.text(
+                    (x + offset_x, current_y + offset_y),
+                    line,
+                    font=font,
+                    fill=(0, 0, 0, shadow_alpha)
+                )
+        
+        # Draw main text
+        text_alpha = int(255 * animated_alpha)
+        # Add subtle gradient to text (darker at bottom for 3D effect)
+        draw.text(
+            (x, current_y),
+            line,
+            font=font,
+            fill=(255, 255, 255, text_alpha)
+        )
+        
+        # Draw highlight on top of text for embossed effect
+        highlight_alpha = int(100 * animated_alpha)
+        draw.text(
+            (x, current_y - 1),
+            line,
+            font=font,
+            fill=(255, 255, 255, highlight_alpha)
+        )
+        
+        current_y += line_heights[i] + LINE_SPACING
+    
+    return img.convert('RGB')
 
 # ================= VIDEO CREATION =================
 
@@ -152,10 +326,14 @@ def create_video(row):
     writer_path = OUTPUT_DIR / f"{uuid.uuid4().hex}_temp.mp4"
     writer = cv2.VideoWriter(str(writer_path), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (VIDEO_WIDTH, VIDEO_HEIGHT))
 
-    # --- Thumbnail ---
+    # --- Thumbnail with animation ---
     thumb_img = resize(Image.open(thumb_file))
-    for _ in range(THUMB_DURATION * FPS):
-        writer.write(cv2.cvtColor(np.array(thumb_img), cv2.COLOR_RGB2BGR))
+    for i in range(THUMB_DURATION * FPS):
+        # Fade in effect
+        alpha = min(1.0, i / (FPS * 0.5))  # Fade in over 0.5 seconds
+        frame_img = thumb_img.copy()
+        frame = draw_caption(frame_img, row['Title'], alpha=alpha)
+        writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
 
     # --- Main Scene ---
     bg_img = resize(Image.open(bg_file))
@@ -165,11 +343,23 @@ def create_video(row):
     frame_cursor = 0
     for s, dur in zip(sentences, sentence_durations):
         frames = int(dur * FPS)
+        # Calculate animation frames for this sentence
+        fade_frames = int(min(frames * 0.2, FPS * ANIMATION_DURATION))
+        
         for i in range(frames):
             frame = ken_burns_frame(bg_img, frame_cursor + i, total_frames, zoom_end, pan_x, pan_y)
-            # optional fade
-            alpha = 1.0
-            draw_caption(frame, s, alpha)
+            
+            # Calculate animation progress (fade in at start, fade out at end)
+            animation_progress = 1.0
+            if i < fade_frames:
+                # Fade in
+                animation_progress = i / fade_frames
+            elif i > frames - fade_frames:
+                # Fade out
+                animation_progress = (frames - i) / fade_frames
+            
+            # Draw caption with animation
+            frame = draw_caption(frame, s, animation_progress=animation_progress)
             writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
         frame_cursor += frames
 
@@ -178,19 +368,34 @@ def create_video(row):
     outro_frames = OUTTRO_DURATION * FPS
     zoom_end_out, pan_x_out, pan_y_out = prepare_ken_burns(outtro_img)
     for i in range(outro_frames):
+        # Fade out effect for outro
+        alpha = max(0.0, 1.0 - (i / (outro_frames * 0.5)))
         frame = ken_burns_frame(outtro_img, i, outro_frames, zoom_end_out, pan_x_out, pan_y_out)
+        # Add call to action text
+        cta_text = "Like & Subscribe!"
+        if i > outro_frames * 0.3:  # Show CTA after 30% of outro
+            frame = draw_caption(frame, cta_text, alpha=alpha)
         writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
 
     writer.release()
 
     # --- Merge video with merged audio ---
     final_path = OUTPUT_DIR / f"{uuid.uuid4().hex}_final.mp4"
+    # Add background music for better engagement (optional)
+    # bg_music_path = "path/to/background_music.mp3"
+    
     subprocess.run([
         "ffmpeg","-y",
         "-i", str(writer_path),
         "-i", str(merged_audio),
-        "-c:v","copy",
-        "-c:a","aac",
+        # "-i", bg_music_path,  # Uncomment to add background music
+        "-filter_complex", "[1:a]volume=1.0[a1];[a1]aresample=async=1:first_pts=0[aout]",  # Audio normalization
+        "-c:v", "libx264",
+        "-preset", "medium",
+        "-crf", "23",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-shortest",
         str(final_path)
     ], check=True)
 
@@ -216,19 +421,32 @@ def upload(video_file, row):
             part="snippet,status",
             body={
                 "snippet": {
-                    "title": row['Title'],
-                    "description": row['Voiceover Text'] + "\n\n#motivation #success #mindset",
+                    "title": f"🔥 {row['Title']} 🔥",  # Add emojis for clickability
+                    "description": row['Voiceover Text'] + "\n\n" + 
+                                  "👇 WATCH NEXT: [Your Playlist Link]\n\n" +
+                                  "💬 COMMENT your thoughts below!\n\n" +
+                                  "🔔 SUBSCRIBE for daily motivation!\n\n" +
+                                  "📱 FOLLOW on social media: [Your Links]\n\n" +
+                                  "#motivation #success #mindset #inspiration #lifelessons #personaldevelopment #growthmindset #positivevibes #entrepreneur #goals",
+                    "tags": ["motivation", "success", "mindset", "inspiration", "personal development", 
+                            "life lessons", "positive thinking", "self improvement", "mindfulness"],
                     "categoryId": "22"
                 },
-                "status":{"privacyStatus":"public"}
+                "status": {
+                    "privacyStatus": "public",
+                    "selfDeclaredMadeForKids": False,
+                    "embeddable": True
+                }
             },
             media_body=MediaFileUpload(video_file, resumable=True)
         ).execute()
         print("✅ Uploaded Video ID:", response.get("id"))
+        return response.get("id")
     except Exception as e:
         print("❌ Upload failed:", e)
+        return None
 
-# ================= MAIN =================
+# ================= ENHANCED MAIN =================
 
 def main():
     try:
@@ -241,15 +459,27 @@ def main():
         print("⚠ CSV empty, nothing to upload.")
         return
 
-    row = df.iloc[0]  # take first row
-    video_file = create_video(row)
-    if video_file:
-        upload(video_file, row)
-        # remove row from CSV
-        df = df.drop(row.name)
+    # Process up to 3 videos in one run
+    for idx, row in df.head(3).iterrows():
+        print(f"🎬 Creating video {idx + 1}/3: {row['Title']}")
+        video_file = create_video(row)
+        if video_file:
+            video_id = upload(video_file, row)
+            if video_id:
+                # Update CSV to mark as processed
+                df.at[idx, 'Uploaded'] = True
+                df.at[idx, 'Video_ID'] = video_id
+                df.at[idx, 'Upload_Date'] = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                print(f"⚠ Upload failed for: {row['Title']}")
+        else:
+            print(f"⚠ Video creation failed for: {row['Title']}")
+        
+        # Save progress after each video
         df.to_csv(SCRIPT_CSV, index=False)
-    else:
-        print("⚠ Video creation failed.")
+        print("💾 Progress saved to CSV")
+    
+    print("✨ Batch processing complete!")
 
 if __name__ == "__main__":
     main()
