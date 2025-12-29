@@ -1,242 +1,215 @@
 #!/usr/bin/env python3
 
-import cv2
-import numpy as np
-import pandas as pd
-import pytesseract
+import os
 import random
 import subprocess
-from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
-from gtts import gTTS
 import uuid
-import os
-import sys
+from pathlib import Path
+from io import BytesIO
+
+import requests
+from gtts import gTTS
+from PIL import Image, ImageDraw, ImageFont
+from moviepy.editor import (
+    ImageClip, AudioFileClip, CompositeVideoClip, concatenate_audioclips,
+    concatenate_videoclips, vfx, VideoFileClip
+)
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
-from fuzzywuzzy import process
+from google.auth.transport.requests import Request
+import html
+import re
 
-# ================= CONFIG =================
-
-VIDEO_WIDTH = 1920
-VIDEO_HEIGHT = 1080
+# ---------------- CONFIG ----------------
+VIDEO_W, VIDEO_H = 1920, 1080
 FPS = 30
+ZOOM_RATE = 0.015
+BASE_FONT_SIZE = 60
+CAPTION_HEIGHT = int(VIDEO_H * 0.25)
+MAX_CAPTION_CHARS = 250
 
-THUMB_DURATION = 1        # seconds
-OUTTRO_DURATION = 2       # seconds
-FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-FONT_SIZE = 60
-CAPTION_SENTENCES = 2      # number of sentences to display in caption
+WORKDIR = Path("work")
+WORKDIR.mkdir(exist_ok=True)
 
-THUMB_DIR = Path("thumbnails")
-BG_DIR = Path("backgroundim")
-OUTTRO_DIR = Path("outtro")
-SCRIPT_CSV = Path("Script/script.csv")
-OUTPUT_DIR = Path("outputs")
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTTRO_DIR = Path("Outtro")
 
-# ================= YOUTUBE AUTH =================
+YT_CLIENT_ID = os.getenv("YT_CLIENT_ID")
+YT_CLIENT_SECRET = os.getenv("YT_CLIENT_SECRET")
+YT_REFRESH_TOKEN = os.getenv("YT_REFRESH_TOKEN")
 
-CLIENT_ID = os.environ.get("YT_CLIENT_ID")
-CLIENT_SECRET = os.environ.get("YT_CLIENT_SECRET")
-REFRESH_TOKEN = os.environ.get("YT_REFRESH_TOKEN")
+# ---------------- UTILITIES ----------------
+def sanitize_text(s: str) -> str:
+    if not s:
+        return ""
+    s = html.unescape(s)
+    s = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", s)
+    s = re.sub(r"\s+", " ", s)
+    return s.strip()
 
-if not CLIENT_ID or not CLIENT_SECRET or not REFRESH_TOKEN:
-    print("❌ Missing YouTube credentials. Set YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN.")
-    sys.exit(1)
+def fetch_and_prepare_bg(image_url, fallback_query="entertainment"):
+    try:
+        if image_url:
+            r = requests.get(image_url, timeout=15)
+            img = Image.open(BytesIO(r.content)).convert("RGB")
+        else:
+            unsplash_url = f"https://source.unsplash.com/{VIDEO_W}x{VIDEO_H}/?{fallback_query}"
+            r = requests.get(unsplash_url, timeout=15)
+            img = Image.open(BytesIO(r.content)).convert("RGB")
+        w, h = img.size
+        scale = max(VIDEO_W / w, VIDEO_H / h)
+        img = img.resize((int(w * scale), int(h * scale)))
+        left = (img.size[0] - VIDEO_W) // 2
+        top = (img.size[1] - VIDEO_H) // 2
+        img = img.crop((left, top, left + VIDEO_W, top + VIDEO_H))
+        out = WORKDIR / "bg.jpg"
+        img.save(out)
+        return str(out)
+    except:
+        raise RuntimeError("Failed to fetch or prepare background image")
 
-# ================= UTILITIES =================
+def generate_tts_per_line(lines):
+    tts_paths = []
+    durations = []
+    for i, line in enumerate(lines):
+        line = line.replace("’", "'").replace("‘", "'")
+        tts_file = WORKDIR / f"tts_{i}.mp3"
+        tts = gTTS(text=line, lang="en")
+        tts.save(str(tts_file))
+        audio = AudioFileClip(str(tts_file))
+        durations.append(max(audio.duration, 1))
+        audio.close()
+        tts_paths.append(str(tts_file))
+    return tts_paths, durations
 
-def extract_text_from_image(img_path):
-    img = Image.open(img_path)
-    text = pytesseract.image_to_string(img, lang="eng")
-    text = " ".join(text.split())
-    return text if text else "Double Meaning Quote"
-
-def generate_voice(text, out_path):
-    text = text.replace("’", "'").replace("‘", "'")
-    tts = gTTS(text=text, lang="en")
-    tts.save(out_path)
-
-def resize(img):
-    return img.resize((VIDEO_WIDTH, VIDEO_HEIGHT), Image.LANCZOS)
-
-def ease_in_out(t):
-    return 0.5 - 0.5 * np.cos(np.pi * t)
-
-def prepare_ken_burns(img):
+def prepare_ken_burns(img: Image.Image):
     zoom_end = random.uniform(1.05, 1.15)
     pan_x = random.choice([0, 0.5, 1])
     pan_y = random.choice([0, 0.5, 1])
     return zoom_end, pan_x, pan_y
 
-def ken_burns_frame(img, idx, total, zoom_end, pan_x, pan_y):
-    t = ease_in_out(idx / total)
+def ken_burns_frame(img: Image.Image, idx: int, total: int, zoom_end, pan_x, pan_y):
+    t = 0.5 - 0.5 * (1 - (idx/total) * 2 if idx/total < 0.5 else 1)  # simple ease-in/out
     zoom = 1 + (zoom_end - 1) * t
     w, h = img.size
     cw, ch = int(w / zoom), int(h / zoom)
     x = int((w - cw) * pan_x * t)
     y = int((h - ch) * pan_y * t)
     crop = img.crop((x, y, x + cw, y + ch))
-    return crop.resize((VIDEO_WIDTH, VIDEO_HEIGHT), Image.LANCZOS)
+    return crop.resize((VIDEO_W, VIDEO_H), Image.LANCZOS)
 
-def get_caption_text(full_text):
-    sentences = full_text.replace("?", ".").replace("!", ".").split(".")
-    sentences = [s.strip() for s in sentences if s.strip()]
-    caption = ". ".join(sentences[:CAPTION_SENTENCES])
-    if not caption.endswith("."):
-        caption += "."
-    return caption
-
-def draw_caption(img, text, alpha=1.0):
-    """Draw caption with optional fade effect."""
-    draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
-    lines = text.split(". ")
-    total_h = sum(font.getbbox(l)[3] for l in lines) + 10 * len(lines)
-    y = (VIDEO_HEIGHT - total_h) // 2
-    for l in lines:
-        l = l.strip()
-        if not l:
-            continue
-        w = draw.textlength(l, font)
-        x = (VIDEO_WIDTH - w) // 2
-        # draw shadow
-        draw.text((x+3, y+3), l, font=font, fill=(0,0,0,int(255*alpha)))
-        # draw main text
-        draw.text((x, y), l, font=font, fill=(255,255,255,int(255*alpha)))
-        y += font.getbbox(l)[3] + 10
-
-# ================= VIDEO CREATION =================
-
-def create_video(row):
-    # Thumbnail selection using fuzzy OCR
-    thumb_file = None
-    thumbnails = list(THUMB_DIR.glob("*"))
-    if thumbnails:
-        thumb_texts = [extract_text_from_image(f) for f in thumbnails]
-        best_match, score = process.extractOne(row['Title'], thumb_texts)
-        if score >= 80:
-            idx = thumb_texts.index(best_match)
-            thumb_file = thumbnails[idx]
-    if not thumb_file:
-        print(f"⚠ No thumbnail found for {row['Title']}")
-        return None
-
-    bg_file = random.choice(list(BG_DIR.glob("*")))
-    outtro_file = random.choice(list(OUTTRO_DIR.glob("*")))
-    voice_file = OUTPUT_DIR / f"{uuid.uuid4().hex}_voice.mp3"
-
-    generate_voice(row['Voiceover Text'], voice_file)
-
-    # Voice duration
+def render_center_caption(text, index, max_width=VIDEO_W*0.9, max_height=CAPTION_HEIGHT, base_font_size=BASE_FONT_SIZE):
+    text = sanitize_text(text)[:MAX_CAPTION_CHARS]
     try:
-        duration = float(subprocess.check_output([
-            "ffprobe","-v","error","-show_entries",
-            "format=duration","-of",
-            "default=noprint_wrappers=1:nokey=1", str(voice_file)
-        ]).decode().strip())
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", base_font_size)
     except:
-        duration = max(len(row['Voiceover Text'].split())/2, 5)
+        font = ImageFont.load_default()
 
-    total_frames = int(duration * FPS)
-    writer_path = OUTPUT_DIR / f"{uuid.uuid4().hex}_temp.mp4"
-    writer = cv2.VideoWriter(str(writer_path), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (VIDEO_WIDTH, VIDEO_HEIGHT))
+    tmp_img = Image.new("RGBA", (VIDEO_W, VIDEO_H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(tmp_img)
 
-    # --- Thumbnail
-    thumb_img = resize(Image.open(thumb_file))
-    for _ in range(THUMB_DURATION * FPS):
-        writer.write(cv2.cvtColor(np.array(thumb_img), cv2.COLOR_RGB2BGR))
+    # wrap text
+    words = text.split()
+    lines = []
+    while words:
+        line = ""
+        while words and draw.textlength(line + words[0] + " ", font=font) < max_width:
+            line += words.pop(0) + " "
+        lines.append(line.strip())
 
-    # --- Main scene
-    bg_img = resize(Image.open(bg_file))
-    zoom_end, pan_x, pan_y = prepare_ken_burns(bg_img)
-    caption_text = get_caption_text(row['Voiceover Text'])
+    img = Image.new("RGBA", (VIDEO_W, int(max_height)), (0, 0, 0, 180))
+    draw = ImageDraw.Draw(img)
+    total_h = sum(font.getbbox(l)[3] for l in lines) + 10 * len(lines)
+    y = (max_height - total_h) // 2
+    for l in lines:
+        w = draw.textlength(l, font)
+        x = (VIDEO_W - w) // 2
+        draw.text((x, y), l, font=font, fill="white")
+        y += font.getbbox(l)[3] + 10
+    out = WORKDIR / f"center_cap_{index}.png"
+    img.save(out)
+    return str(out)
 
-    for i in range(total_frames):
-        frame = ken_burns_frame(bg_img, i, total_frames, zoom_end, pan_x, pan_y)
-        # Simple fade-in/out animation for caption
-        fade_in_frames = int(0.1 * total_frames)
-        fade_out_frames = int(0.1 * total_frames)
-        if i < fade_in_frames:
-            alpha = i / fade_in_frames
-        elif i > total_frames - fade_out_frames:
-            alpha = (total_frames - i) / fade_out_frames
-        else:
-            alpha = 1.0
-        draw_caption(frame, caption_text, alpha)
-        writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
+def load_outtro_clip(target_w=VIDEO_W, target_h=VIDEO_H):
+    if not OUTTRO_DIR.exists():
+        return None
+    videos = list(OUTTRO_DIR.glob("*.mp4"))
+    if not videos:
+        return None
+    outro_path = random.choice(videos)
+    outro = VideoFileClip(str(outro_path)).resize(newsize=(target_w, target_h))
+    return outro
 
-    # --- Animated outro
-    outtro_img = resize(Image.open(outtro_file))
-    outro_frames = OUTTRO_DURATION * FPS
-    zoom_end_outtro, pan_x_out, pan_y_out = prepare_ken_burns(outtro_img)
-    for i in range(outro_frames):
-        frame = ken_burns_frame(outtro_img, i, outro_frames, zoom_end_outtro, pan_x_out, pan_y_out)
-        writer.write(cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR))
+def build_final_video(bg_path, lines, tts_paths, durations, out_file):
+    total = sum(durations) + 2
+    bg = ImageClip(bg_path).set_duration(total)
+    bg = bg.fx(vfx.resize, lambda t: 1 + ZOOM_RATE * t)
 
-    writer.release()
+    caps = []
+    cursor = 0
+    for i, (line, dur) in enumerate(zip(lines, durations)):
+        cap_img = render_center_caption(line, i)
+        cap = ImageClip(cap_img).set_duration(dur).set_start(cursor)
+        cap = cap.set_position(("center", "center"))
+        caps.append(cap)
+        cursor += dur
 
-    # --- Merge voice
-    final_path = OUTPUT_DIR / f"{uuid.uuid4().hex}_final.mp4"
-    subprocess.run([
-        "ffmpeg","-y","-i", str(writer_path), "-i", str(voice_file),
-        "-c:v","copy","-c:a","aac", str(final_path)
-    ], check=True)
+    audio = concatenate_audioclips([AudioFileClip(p) for p in tts_paths])
+    main_video = CompositeVideoClip([bg] + caps, size=(VIDEO_W, VIDEO_H))
+    main_video = main_video.set_audio(audio)
 
-    # Cleanup
-    writer_path.unlink()
-    voice_file.unlink()
-    thumb_file.unlink()
-
-    return final_path
-
-# ================= UPLOAD =================
-
-def upload(video_file, row):
-    creds = Credentials(None, refresh_token=REFRESH_TOKEN, token_uri="https://oauth2.googleapis.com/token",
-                        client_id=CLIENT_ID, client_secret=CLIENT_SECRET, scopes=["https://www.googleapis.com/auth/youtube.upload"])
-    youtube = build("youtube", "v3", credentials=creds)
-    try:
-        response = youtube.videos().insert(
-            part="snippet,status",
-            body={
-                "snippet": {
-                    "title": row['Title'],
-                    "description": row['Voiceover Text'] + "\n\n#motivation #success #mindset",
-                    "categoryId": "22"
-                },
-                "status":{"privacyStatus":"public"}
-            },
-            media_body=MediaFileUpload(video_file, resumable=True)
-        ).execute()
-        print("✅ Uploaded Video ID:", response.get("id"))
-    except Exception as e:
-        print("❌ Upload failed:", e)
-
-# ================= MAIN =================
-
-def main():
-    try:
-        df = pd.read_csv(SCRIPT_CSV, encoding='latin1')
-    except Exception as e:
-        print("❌ Failed to read CSV:", e)
-        return
-
-    if df.empty:
-        print("⚠ CSV empty, nothing to upload.")
-        return
-
-    row = df.iloc[0]  # take first row
-    video_file = create_video(row)
-    if video_file:
-        upload(video_file, row)
-        # remove row from CSV
-        df = df.drop(row.name)
-        df.to_csv(SCRIPT_CSV, index=False)
+    outro_clip = load_outtro_clip()
+    if outro_clip:
+        final_video = concatenate_videoclips([main_video, outro_clip], method="compose")
     else:
-        print("⚠ Video creation failed.")
+        final_video = main_video
+
+    final_video.write_videofile(str(out_file), fps=FPS, codec="libx264", audio_codec="aac")
+    return str(out_file)
+
+def get_youtube_service():
+    creds = Credentials(
+        token=None,
+        refresh_token=YT_REFRESH_TOKEN,
+        client_id=YT_CLIENT_ID,
+        client_secret=YT_CLIENT_SECRET,
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=["https://www.googleapis.com/auth/youtube.upload"]
+    )
+    creds.refresh(Request())
+    return build("youtube", "v3", credentials=creds, cache_discovery=False)
+
+def upload_public(video_file, title, description):
+    yt = get_youtube_service()
+    body = {
+        "snippet": {"title": title, "description": description, "tags": ["news","updates"]},
+        "status": {"privacyStatus": "public"}
+    }
+    media = MediaFileUpload(video_file, resumable=True)
+    req = yt.videos().insert(part="snippet,status", body=body, media_body=media)
+    resp = None
+    while resp is None:
+        status, resp = req.next_chunk()
+        if status:
+            print("Upload:", int(status.progress() * 100), "%")
+    return resp["id"]
+
+# ---------------- MAIN ----------------
+def main():
+    # Example placeholders (replace with your real news/data fetching)
+    lines = [
+        "Breaking news: Major event happening now.",
+        "Stay tuned for the latest updates on this story."
+    ]
+    image_url = None  # replace with fetched article image url
+
+    bg = fetch_and_prepare_bg(image_url)
+    tts_paths, durations = generate_tts_per_line(lines)
+    out_video = WORKDIR / "final.mp4"
+    build_final_video(bg, lines, tts_paths, durations, out_video)
+
+    upload_public(str(out_video), "Breaking News Update", "Stay informed with latest news.")
+    print("✅ Video completed and uploaded.")
 
 if __name__ == "__main__":
     main()
