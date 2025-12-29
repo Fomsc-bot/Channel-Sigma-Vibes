@@ -16,6 +16,7 @@ import math
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
+from fuzzywuzzy import process
 
 # ================= CONFIG =================
 
@@ -48,10 +49,11 @@ if not CLIENT_ID or not CLIENT_SECRET or not REFRESH_TOKEN:
 # ================= UTILITIES =================
 
 def extract_text_from_image(img_path):
+    """Robust OCR to get text from thumbnail"""
     img = Image.open(img_path)
-    text = pytesseract.image_to_string(img)
-    text = text.replace("\n", " ").strip()
-    return text
+    text = pytesseract.image_to_string(img, lang="eng")
+    text = " ".join(text.split())
+    return text if text else "Double Meaning Quote"
 
 def generate_voice(text, out_path):
     tts = gTTS(text=text, lang="en")
@@ -107,12 +109,16 @@ def draw_typewriter_text(img, text, frame_idx, total_frames):
 # ================= VIDEO CREATION =================
 
 def create_video(row):
+    # --- Thumbnail selection: fuzzy OCR matching
     thumb_file = None
-    for f in THUMB_DIR.glob("*"):
-        text = extract_text_from_image(f)
-        if text.lower() == row['Title'].lower():
-            thumb_file = f
-            break
+    thumbnails = list(THUMB_DIR.glob("*"))
+    best_match = None
+    if thumbnails:
+        thumb_texts = [extract_text_from_image(f) for f in thumbnails]
+        best_match, score = process.extractOne(row['Title'], thumb_texts)
+        if score >= 80:
+            idx = thumb_texts.index(best_match)
+            thumb_file = thumbnails[idx]
     if not thumb_file:
         print(f"⚠ No thumbnail found for {row['Title']}")
         return None
