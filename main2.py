@@ -17,6 +17,8 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 
+from fuzzywuzzy import process
+
 # ================= CONFIG =================
 
 VIDEO_WIDTH = 1920
@@ -50,7 +52,9 @@ if not CLIENT_ID or not CLIENT_SECRET or not REFRESH_TOKEN:
 
 def extract_text_from_image(img_path):
     img = Image.open(img_path)
-    return pytesseract.image_to_string(img).strip()
+    text = pytesseract.image_to_string(img)
+    text = text.replace("\n", " ").strip()
+    return text
 
 # ================= TTS ====================
 
@@ -191,27 +195,33 @@ def main():
 
     for thumb in THUMB_DIR.glob("*"):
         img_text = extract_text_from_image(thumb)
-        match = df[df["Title"].str.lower() == img_text.lower()]
-        if match.empty:
-            continue
+        print(f"🔍 Thumbnail OCR text: '{img_text}'")
+        titles = df['Title'].tolist()
 
-        row = match.iloc[0]
-        bg = random.choice(list(BG_DIR.glob("*")))
-        outtro = random.choice(list(OUTTRO_DIR.glob("*")))
+        # --- Fuzzy matching
+        best_match, score = process.extractOne(img_text, titles)
+        print(f"Best match: '{best_match}' with score {score}")
 
-        print(f"🎬 Creating video for title: {row['Title']}")
-        video = create_video(thumb, bg, outtro, row["Voiceover Text"])
+        if score >= 80:  # 80% similarity threshold
+            row = df[df['Title'] == best_match].iloc[0]
+            bg = random.choice(list(BG_DIR.glob("*")))
+            outtro = random.choice(list(OUTTRO_DIR.glob("*")))
 
-        print("📤 Uploading video...")
-        upload(video, row["Title"], row["Voiceover Text"])
+            print(f"🎬 Creating video for title: {row['Title']}")
+            video = create_video(thumb, bg, outtro, row["Voiceover Text"])
 
-        # --- Cleanup
-        df = df.drop(row.name)
-        thumb.unlink()
-        df.to_csv(SCRIPT_CSV, index=False)
+            print("📤 Uploading video...")
+            upload(video, row["Title"], row["Voiceover Text"])
 
-        uploaded = True
-        break  # only one video per run
+            # --- Cleanup
+            df = df.drop(row.name)
+            thumb.unlink()
+            df.to_csv(SCRIPT_CSV, index=False)
+
+            uploaded = True
+            break  # only one video per run
+        else:
+            print(f"⚠ No good match for OCR text '{img_text}' (best match '{best_match}', score {score})")
 
     if not uploaded:
         print("⚠ No matching titles found in thumbnails/CSV. Nothing uploaded.")
