@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render one inline-CSS HTML scene and publish it as a YouTube Short."""
 from __future__ import annotations
-import json, os, random, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+import json, os, random, re, subprocess, sys, urllib.error, urllib.parse, urllib.request
 from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
@@ -110,33 +110,6 @@ def build_title(caption, emoji, tags):
         title = caption + suffix
     return title
 
-def generate_with_gemini(api_key, prompt):
-    model_name = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
-    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-    payload = json.dumps({"contents":[{"parts":[{"text":prompt}]}],
-                          "generationConfig":{"responseMimeType":"application/json"}}).encode()
-    request = urllib.request.Request(endpoint, data=payload, headers={
-        "Content-Type": "application/json",
-        "x-goog-api-key": api_key,
-    })
-    for attempt in range(3):
-        try:
-            with urllib.request.urlopen(request, timeout=90) as response:
-                data = json.load(response)
-            break
-        except urllib.error.HTTPError as error:
-            details = error.read().decode("utf-8", errors="replace")
-            retryable = error.code == 429 or error.code >= 500
-            if not retryable or attempt == 2:
-                raise RuntimeError(f"Gemini API returned HTTP {error.code} for {model_name}: {details}") from error
-            time.sleep(3 * (2 ** attempt))
-        except (TimeoutError, urllib.error.URLError) as error:
-            if attempt == 2:
-                raise RuntimeError(f"Gemini timed out after three attempts for {model_name}: {error}") from error
-            time.sleep(3 * (2 ** attempt))
-    raw = data["candidates"][0]["content"]["parts"][0]["text"]
-    return parse_metadata(raw, "Gemini")
-
 def generate_with_groq(api_key, prompt):
     model_name = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
     try:
@@ -157,23 +130,10 @@ def generate_with_groq(api_key, prompt):
         raise RuntimeError(f"Groq API request failed for {model_name}: {details}") from error
     return parse_metadata(response.choices[0].message.content, "Groq")
 
-def generate_metadata(gemini_key, groq_key, scene_text):
-    prompt = metadata_prompt(scene_text)
-    failures = []
-    if gemini_key:
-        try:
-            return generate_with_gemini(gemini_key, prompt)
-        except Exception as error:
-            failures.append(f"Gemini: {error}")
-            print(f"Gemini metadata request failed; trying Groq fallback. {error}", file=sys.stderr)
-    if groq_key:
-        try:
-            return generate_with_groq(groq_key, prompt)
-        except Exception as error:
-            failures.append(f"Groq: {error}")
-    if not failures:
-        raise RuntimeError("Set GEMINI_API_KEY or GROQ_API_KEY for caption and hashtag generation")
-    raise RuntimeError("No metadata provider succeeded. " + " | ".join(failures))
+def generate_metadata(groq_key, scene_text):
+    if not groq_key:
+        raise RuntimeError("Set GROQ_API_KEY for caption and hashtag generation")
+    return generate_with_groq(groq_key, metadata_prompt(scene_text))
 
 def render_html(source_file, duration, target):
     frame_count = round(duration * FPS)
@@ -307,8 +267,8 @@ def save_publish_state(state):
     PUBLISH_STATE_FILE.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
 
 def main():
-    if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GROQ_API_KEY")):
-        raise RuntimeError("Set GEMINI_API_KEY or GROQ_API_KEY for metadata generation")
+    if not os.environ.get("GROQ_API_KEY"):
+        raise RuntimeError("Set GROQ_API_KEY for metadata generation")
     required = ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN", "FB_PAGE_ID", "FB_PAGE_ACCESS_TOKEN")
     missing = [key for key in required if not os.environ.get(key)]
     if missing:
@@ -323,7 +283,7 @@ def main():
     scene_text = visible_text(markup)
     state = load_publish_state()
     delivery = state.setdefault(source.name, {})
-    caption, tags = generate_metadata(os.environ.get("GEMINI_API_KEY"), os.environ.get("GROQ_API_KEY"), scene_text)
+    caption, tags = generate_metadata(os.environ.get("GROQ_API_KEY"), scene_text)
     emoji = related_emoji(scene_text, caption)
     OUTPUT_DIR.mkdir(parents=True,exist_ok=True)
     silent = OUTPUT_DIR / (source.stem+"-silent.mp4")
