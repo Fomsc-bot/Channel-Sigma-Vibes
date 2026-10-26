@@ -83,13 +83,17 @@ jobs:
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          FB_GRAPH_API_VERSION: v26.0
         run: python html_short_pipeline.py
 
-      - name: Commit consumed HTML and music rotation
+      - name: Commit delivery state and consumed HTML/music rotation
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- "HTML Files That Needed To Convert To Video" content/music_rotation.json
+          git add -- "HTML Files That Needed To Convert To Video" content/music_rotation.json content/publish_state.json
           if ! git diff --cached --quiet; then
             git commit -m "Consume published HTML Short"
             git push

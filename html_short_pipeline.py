@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render one inline-CSS HTML scene and publish it as a YouTube Short."""
 from __future__ import annotations
-import json, os, random, re, subprocess, sys, time, urllib.error, urllib.request
+import json, os, random, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
@@ -16,6 +16,7 @@ INPUT_DIR = ROOT / "HTML Files That Needed To Convert To Video"
 MUSIC_DIR = ROOT / "Background_Music"
 OUTPUT_DIR = ROOT / "outputs"
 ROTATION_FILE = ROOT / "content" / "music_rotation.json"
+PUBLISH_STATE_FILE = ROOT / "content" / "publish_state.json"
 WIDTH, HEIGHT, FPS = 1080, 1920, 30
 
 class TextExtractor(HTMLParser):
@@ -207,7 +208,7 @@ def add_music(silent, music, final, duration):
          "-t",str(duration),"-r",str(FPS),"-c:v","libx264","-preset","veryfast","-pix_fmt","yuv420p",
          "-c:a","aac","-b:a","128k","-af","volume=0.18","-movflags","+faststart",str(final)])
 
-def upload(video, caption, emoji, tags):
+def upload_youtube(video, caption, emoji, tags):
     credentials = Credentials(None, refresh_token=os.environ["YT_REFRESH_TOKEN"],
       token_uri="https://oauth2.googleapis.com/token", client_id=os.environ["YT_CLIENT_ID"],
       client_secret=os.environ["YT_CLIENT_SECRET"], scopes=["https://www.googleapis.com/auth/youtube.upload"])
@@ -219,11 +220,77 @@ def upload(video, caption, emoji, tags):
       media_body=MediaFileUpload(str(video),mimetype="video/mp4",resumable=True)).execute()
     return result["id"]
 
+def upload_facebook_reel(video, caption, emoji, tags):
+    """Upload and publish a Reel to the configured Facebook Page."""
+    page_id = os.environ["FB_PAGE_ID"]
+    token = os.environ["FB_PAGE_ACCESS_TOKEN"]
+    version = os.environ.get("FB_GRAPH_API_VERSION", "v26.0")
+    api_root = f"https://graph.facebook.com/{version}"
+
+    def post_form(url, fields):
+        body = urllib.parse.urlencode(fields).encode()
+        request = urllib.request.Request(url, data=body, headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+        })
+        try:
+            with urllib.request.urlopen(request, timeout=90) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as error:
+            details = error.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Facebook API returned HTTP {error.code}: {details}") from error
+
+    start = post_form(f"{api_root}/{page_id}/video_reels", {
+        "upload_phase": "start", "access_token": token,
+    })
+    video_id = start.get("video_id")
+    upload_url = start.get("upload_url")
+    if not video_id or not upload_url:
+        raise RuntimeError(f"Facebook Reel upload start returned an incomplete response: {start}")
+
+    file_size = video.stat().st_size
+    upload_request = urllib.request.Request(upload_url, data=video.read_bytes(), headers={
+        "Authorization": f"OAuth {token}",
+        "offset": "0",
+        "file_size": str(file_size),
+        "Content-Type": "application/octet-stream",
+    })
+    try:
+        with urllib.request.urlopen(upload_request, timeout=300) as response:
+            uploaded = json.load(response)
+    except urllib.error.HTTPError as error:
+        details = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Facebook Reel upload returned HTTP {error.code}: {details}") from error
+    if uploaded.get("success") is not True:
+        raise RuntimeError(f"Facebook Reel upload was not confirmed: {uploaded}")
+
+    finished = post_form(f"{api_root}/{page_id}/video_reels", {
+        "upload_phase": "finish",
+        "video_id": video_id,
+        "video_state": "PUBLISHED",
+        "title": build_title(caption, emoji, tags),
+        "description": caption + "\n\n" + " ".join(tags),
+        "access_token": token,
+    })
+    if finished.get("success") is not True:
+        raise RuntimeError(f"Facebook did not confirm publishing the Reel: {finished}")
+    return video_id
+
+def load_publish_state():
+    if not PUBLISH_STATE_FILE.exists():
+        return {}
+    return json.loads(PUBLISH_STATE_FILE.read_text(encoding="utf-8-sig"))
+
+def save_publish_state(state):
+    PUBLISH_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PUBLISH_STATE_FILE.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+
 def main():
     if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GROQ_API_KEY")):
         raise RuntimeError("Set GEMINI_API_KEY or GROQ_API_KEY for metadata generation")
-    if any(not os.environ.get(k) for k in ("YT_CLIENT_ID","YT_CLIENT_SECRET","YT_REFRESH_TOKEN")):
-        raise RuntimeError("Set the YT_CLIENT_ID, YT_CLIENT_SECRET, and YT_REFRESH_TOKEN secrets")
+    required = ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN", "FB_PAGE_ID", "FB_PAGE_ACCESS_TOKEN")
+    missing = [key for key in required if not os.environ.get(key)]
+    if missing:
+        raise RuntimeError("Set these GitHub secrets before running: " + ", ".join(missing))
     candidates = sorted(INPUT_DIR.glob("*.html"))
     if not candidates:
         print("No HTML scenes remain.")
@@ -232,6 +299,8 @@ def main():
     markup = source.read_text(encoding="utf-8")
     duration = parse_duration(markup)
     scene_text = visible_text(markup)
+    state = load_publish_state()
+    delivery = state.setdefault(source.name, {})
     caption, tags = generate_metadata(os.environ.get("GEMINI_API_KEY"), os.environ.get("GROQ_API_KEY"), scene_text)
     emoji = related_emoji(scene_text, caption)
     OUTPUT_DIR.mkdir(parents=True,exist_ok=True)
@@ -240,9 +309,17 @@ def main():
     render_html(source,duration,silent)
     add_music(silent,select_music(),final,duration)
     silent.unlink(missing_ok=True)
-    video_id = upload(final,caption,emoji,tags)
+    if not delivery.get("youtube_video_id"):
+        delivery["youtube_video_id"] = upload_youtube(final, caption, emoji, tags)
+        save_publish_state(state)
+    if not delivery.get("facebook_reel_id"):
+        delivery["facebook_reel_id"] = upload_facebook_reel(final, caption, emoji, tags)
+        save_publish_state(state)
     source.unlink()
-    print(f"Uploaded {source.name} as {video_id}; removed source HTML after successful upload.")
+    youtube_id, facebook_id = delivery["youtube_video_id"], delivery["facebook_reel_id"]
+    state.pop(source.name, None)
+    save_publish_state(state)
+    print(f"Published {source.name} to YouTube ({youtube_id}) and Facebook ({facebook_id}); removed source HTML.")
     print(f"Title: {build_title(caption, emoji, tags)}")
 
 if __name__ == "__main__":
