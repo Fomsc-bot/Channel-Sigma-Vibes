@@ -1,0 +1,27 @@
+<!-- SCENE 211 | DURATION: 9s | Theme: The friend you lost | Layout: centered with slow drifting particles -->
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>Scene 211 — The friendship you lost</title><style>
+*{margin:0;padding:0;box-sizing:border-box}:root{--gold:#f5c542;--soft:#f0e6d3;--font:'Georgia','Times New Roman',serif;--sans:'Helvetica Neue',Arial,sans-serif}html,body{height:100%;background:#000;overflow:hidden;display:flex;align-items:center;justify-content:center;font-family:var(--font)}.frame{position:relative;aspect-ratio:9/16;height:min(100vh,calc(100vw*16/9));width:min(100vw,calc(100vh*9/16));overflow:hidden;background:radial-gradient(circle at 50% 45%,#0a0a14 0%,#020203 85%);box-shadow:0 0 80px rgba(0,0,0,.9)}
+.particle{position:absolute;width:2px;height:2px;background:var(--gold);border-radius:50%;opacity:0;animation:drift 8s ease-in-out infinite}
+.p1{top:20%;left:25%;animation-delay:0s}
+.p2{top:30%;right:30%;animation-delay:1.5s}
+.p3{top:50%;left:15%;animation-delay:3s}
+.p4{top:65%;right:20%;animation-delay:4.5s}
+.p5{top:80%;left:40%;animation-delay:6s}
+@keyframes drift{0%,100%{opacity:0;transform:translateY(0) scale(.8)}50%{opacity:.7;transform:translateY(-30px) scale(1.4)}}
+.content{position:relative;z-index:2;display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;padding:22% 12%;text-align:center;overflow-wrap:break-word;word-wrap:break-word;hyphens:auto}
+.quote{font-size:clamp(20px,4.8vw,46px);line-height:1.45;font-weight:400;color:var(--soft);font-style:italic;opacity:0;animation:fadeUp 1.8s cubic-bezier(.22,.9,.3,1) .7s forwards}
+.quote strong{color:var(--gold);font-style:normal;font-weight:700;display:block;margin-top:.5em}
+.sub{font-family:var(--sans);font-size:clamp(10px,2vw,16px);letter-spacing:.2em;text-transform:uppercase;line-height:1.9;color:rgba(240,230,211,.55);margin-top:2.2em;opacity:0;animation:fadeUp 1.4s ease-out 3.4s forwards}
+.cta{position:absolute;bottom:6%;left:50%;transform:translateX(-50%);font-family:var(--sans);font-size:clamp(9px,1.6vw,13px);letter-spacing:.3em;text-transform:uppercase;color:rgba(255,255,255,.45);z-index:3;opacity:0;animation:fadeIn 1s ease-out 5s forwards}
+@keyframes fadeUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{to{opacity:1}}
+</style></head><body>
+<div class="frame">
+  <span class="particle p1"></span><span class="particle p2"></span><span class="particle p3"></span><span class="particle p4"></span><span class="particle p5"></span>
+  <div class="content">
+    <p class="quote">Some friendships<br>do not end.<strong>They just fade<br>into people<br>you used to<br>know everything about.</strong></p>
+    <p class="sub">Send the message</p>
+  </div>
+  <div class="cta">Follow · Honor the ones you miss</div>
+</div></body></html>
