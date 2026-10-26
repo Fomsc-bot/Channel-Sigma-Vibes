@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render one inline-CSS HTML scene and publish it as a YouTube Short."""
 from __future__ import annotations
-import json, os, random, re, subprocess, sys, urllib.parse, urllib.request
+import json, os, random, re, subprocess, sys, urllib.error, urllib.request
 from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
@@ -48,11 +48,20 @@ def generate_metadata(api_key, scene_text):
       "and hashtags. Caption: maximum four words, relevant, accurate, and no emoji. Hashtags: exactly "
       "four relevant hashtags, each starting with #, no spaces. Do not promise views or make claims "
       "unsupported by the video.\n\nVideo text: " + scene_text)
-    endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + urllib.parse.quote(api_key)
+    model_name = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
     payload = json.dumps({"contents":[{"parts":[{"text":prompt}]}],
                           "generationConfig":{"responseMimeType":"application/json"}}).encode()
-    request = urllib.request.Request(endpoint, data=payload, headers={"Content-Type":"application/json"})
-    with urllib.request.urlopen(request, timeout=60) as response: data = json.load(response)
+    request = urllib.request.Request(endpoint, data=payload, headers={
+        "Content-Type": "application/json",
+        "x-goog-api-key": api_key,
+    })
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            data = json.load(response)
+    except urllib.error.HTTPError as error:
+        details = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Gemini API returned HTTP {error.code} for {model_name}: {details}") from error
     result = json.loads(data["candidates"][0]["content"]["parts"][0]["text"])
     caption = " ".join(str(result.get("caption", "")).split())
     caption = re.sub(r"[#\W]+$", "", caption).strip()
