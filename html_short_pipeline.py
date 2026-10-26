@@ -47,8 +47,9 @@ def visible_text(source):
 def metadata_prompt(scene_text):
     return ("Create YouTube Shorts metadata for this exact video. Return JSON only with keys caption "
       "and hashtags. Caption: maximum four words, relevant, accurate, and no emoji. Hashtags: exactly "
-      "four relevant hashtags, each starting with #, no spaces. Do not promise views or make claims "
-      "unsupported by the video.\n\nVideo text: " + scene_text)
+      "three relevant topic hashtags, each starting with #, no spaces. Do not include #Shorts because "
+      "it is added automatically. Do not promise views or make claims unsupported by the video."
+      "\n\nVideo text: " + scene_text)
 
 def parse_metadata(raw, provider):
     result = json.loads(raw)
@@ -61,16 +62,46 @@ def parse_metadata(raw, provider):
     raw_tags = result.get("hashtags", [])
     if not isinstance(raw_tags, list):
         raise ValueError(f"{provider} hashtags must be a JSON list")
-    tags = []
+    topic_tags = []
     for item in raw_tags:
-        tag = "#" + re.sub(r"[^A-Za-z0-9_]", "", str(item).lstrip("#"))
-        if tag != "#" and tag.lower() not in {t.lower() for t in tags}:
+        tag = "#" + re.sub(r"[^A-Za-z0-9_]", "", str(item).lstrip("#"))[:28]
+        if tag != "#" and tag.lower() != "#shorts" and tag.lower() not in {t.lower() for t in topic_tags}:
+            topic_tags.append(tag)
+        if len(topic_tags) == 3:
+            break
+    tags = ["#shorts"]
+    for tag in topic_tags + ["#Motivation", "#Mindset", "#Sigma"]:
+        if tag.lower() not in {t.lower() for t in tags}:
             tags.append(tag)
         if len(tags) == 4:
             break
-    if len(tags) < 3:
-        raise ValueError(f"{provider} must return at least three relevant hashtags")
     return caption, tags
+
+def related_emoji(scene_text, caption):
+    text = (scene_text + " " + caption).casefold()
+    choices = [
+        (("self-love", "self love", "love", "kindness", "compassion", "heart"), "\U0001F49B"),
+        (("courage", "fear", "brave", "bold", "fearless"), "\U0001F981"),
+        (("mindset", "wisdom", "think", "thought", "philosophy", "mind"), "\U0001F9E0"),
+        (("discipline", "success", "focus", "goal", "action", "habit", "motivation"), "\U000026A1"),
+        (("growth", "healing", "heal", "change", "begin", "start"), "\U0001F331"),
+    ]
+    for keywords, emoji in choices:
+        if any(keyword in text for keyword in keywords):
+            return emoji
+    return "\U00002728"
+
+def build_title(caption, emoji, tags):
+    selected_tags = list(tags)
+    title = f"{caption} {emoji} {' '.join(selected_tags)}"
+    while len(title) > 100 and len(selected_tags) > 1:
+        selected_tags.pop()
+        title = f"{caption} {emoji} {' '.join(selected_tags)}"
+    if len(title) > 100:
+        suffix = f" {emoji} {' '.join(selected_tags)}"
+        caption = caption[:max(1, 100 - len(suffix))].rstrip()
+        title = caption + suffix
+    return title
 
 def generate_with_gemini(api_key, prompt):
     model_name = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
@@ -176,13 +207,13 @@ def add_music(silent, music, final, duration):
          "-t",str(duration),"-r",str(FPS),"-c:v","libx264","-preset","veryfast","-pix_fmt","yuv420p",
          "-c:a","aac","-b:a","128k","-af","volume=0.18","-movflags","+faststart",str(final)])
 
-def upload(video, caption, tags):
+def upload(video, caption, emoji, tags):
     credentials = Credentials(None, refresh_token=os.environ["YT_REFRESH_TOKEN"],
       token_uri="https://oauth2.googleapis.com/token", client_id=os.environ["YT_CLIENT_ID"],
       client_secret=os.environ["YT_CLIENT_SECRET"], scopes=["https://www.googleapis.com/auth/youtube.upload"])
     youtube = build("youtube","v3",credentials=credentials)
     result = youtube.videos().insert(part="snippet,status",body={
-      "snippet":{"title":caption,"description":caption+"\n\n"+" ".join(tags),
+      "snippet":{"title":build_title(caption, emoji, tags),"description":caption+"\n\n"+" ".join(tags),
                  "tags":[t[1:] for t in tags],"categoryId":"22"},
       "status":{"privacyStatus":"public","selfDeclaredMadeForKids":False}},
       media_body=MediaFileUpload(str(video),mimetype="video/mp4",resumable=True)).execute()
@@ -200,17 +231,19 @@ def main():
     source = candidates[0]
     markup = source.read_text(encoding="utf-8")
     duration = parse_duration(markup)
-    caption, tags = generate_metadata(os.environ.get("GEMINI_API_KEY"), os.environ.get("GROQ_API_KEY"), visible_text(markup))
+    scene_text = visible_text(markup)
+    caption, tags = generate_metadata(os.environ.get("GEMINI_API_KEY"), os.environ.get("GROQ_API_KEY"), scene_text)
+    emoji = related_emoji(scene_text, caption)
     OUTPUT_DIR.mkdir(parents=True,exist_ok=True)
     silent = OUTPUT_DIR / (source.stem+"-silent.mp4")
     final = OUTPUT_DIR / (source.stem+".mp4")
     render_html(source,duration,silent)
     add_music(silent,select_music(),final,duration)
     silent.unlink(missing_ok=True)
-    video_id = upload(final,caption,tags)
+    video_id = upload(final,caption,emoji,tags)
     source.unlink()
     print(f"Uploaded {source.name} as {video_id}; removed source HTML after successful upload.")
-    print(f"Caption: {caption}; hashtags: {' '.join(tags)}")
+    print(f"Title: {build_title(caption, emoji, tags)}")
 
 if __name__ == "__main__":
     try: main()
