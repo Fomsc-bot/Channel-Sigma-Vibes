@@ -26,17 +26,54 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Prepare apt archive cache
+        run: mkdir -p "$RUNNER_TEMP/apt-cache/archives/partial"
+
+      - name: Detect Ubuntu release
+        id: ubuntu-release
+        run: |
+          source /etc/os-release
+          echo "version=$VERSION_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Cache apt package archives
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/apt-cache/archives
+          key: apt-${{ runner.os }}-${{ runner.arch }}-ubuntu-${{ steps.ubuntu-release.outputs.version }}-v1
+          restore-keys: |
+            apt-${{ runner.os }}-${{ runner.arch }}-ubuntu-${{ steps.ubuntu-release.outputs.version }}-
+
+      - name: Configure apt to keep cached packages
+        run: |
+          printf 'Dir::Cache::archives "%s/apt-cache/archives";\nAPT::Keep-Downloaded-Packages "true";\n' "$RUNNER_TEMP" | sudo tee /etc/apt/apt.conf.d/99actions-cache
 
       - name: Install FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      - name: Install Python dependencies and Chromium
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          python -m playwright install --with-deps chromium
+
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(python -c 'import importlib.metadata; print(importlib.metadata.version("playwright"))')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Chromium dependencies and browser
+        run: |
+          python -m playwright install-deps chromium
+          python -m playwright install chromium
 
       - name: Render and publish one Short
         env:
