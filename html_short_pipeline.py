@@ -277,12 +277,20 @@ def upload_facebook_reel(video, caption, emoji, tags):
     if uploaded.get("success") is not True:
         raise RuntimeError(f"Facebook Reel upload was not confirmed: {uploaded}")
 
+    facebook_tags = []
+    for tag in tags:
+        if tag.casefold() not in {"#sigma", "#sigmamale"} and tag.casefold() not in {
+            existing.casefold() for existing in facebook_tags
+        }:
+            facebook_tags.append(tag)
+    facebook_tags.extend(["#sigma", "#Sigmamale"])
+
     finished = post_form(f"{api_root}/{page_id}/video_reels", {
         "upload_phase": "finish",
         "video_id": video_id,
         "video_state": "PUBLISHED",
         "title": build_title(caption, emoji, tags),
-        "description": caption + "\n\n" + " ".join(tags),
+        "description": caption + "\n\n" + " ".join(facebook_tags),
         "access_token": token,
     })
     if finished.get("success") is not True:
