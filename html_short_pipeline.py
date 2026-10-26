@@ -47,8 +47,9 @@ def visible_text(source):
 
 def metadata_prompt(scene_text):
     return ("Create YouTube Shorts metadata for this exact video. Return JSON only with keys caption "
-      "and hashtags. Caption: maximum four words, relevant, accurate, and no emoji. Hashtags: exactly "
-      "three relevant topic hashtags, each starting with #, no spaces. Do not include #Shorts because "
+      "and hashtags, where hashtags is a JSON array of exactly three strings. Caption: maximum four "
+      "words, relevant, accurate, and no emoji. Hashtags: relevant topic hashtags, each starting with # "
+      "and containing no spaces. Do not include #Shorts because "
       "it is added automatically. Do not promise views or make claims unsupported by the video."
       "\n\nVideo text: " + scene_text)
 
@@ -61,8 +62,10 @@ def parse_metadata(raw, provider):
     if not caption or len(caption.split()) > 4:
         raise ValueError(f"{provider} caption must be one to four words")
     raw_tags = result.get("hashtags", [])
-    if not isinstance(raw_tags, list):
-        raise ValueError(f"{provider} hashtags must be a JSON list")
+    if isinstance(raw_tags, str):
+        raw_tags = re.findall(r"#?[A-Za-z0-9_]+", raw_tags)
+    elif not isinstance(raw_tags, list):
+        raise ValueError(f"{provider} hashtags must be a JSON array or a string")
     topic_tags = []
     for item in raw_tags:
         tag = "#" + re.sub(r"[^A-Za-z0-9_]", "", str(item).lstrip("#"))[:28]
