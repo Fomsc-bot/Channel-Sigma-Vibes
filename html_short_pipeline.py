@@ -20,6 +20,7 @@ ROTATION_FILE = ROOT / "content" / "music_rotation.json"
 PUBLISH_STATE_FILE = ROOT / "content" / "publish_state.json"
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 WIDTH, HEIGHT, FPS = 1080, 1920, 30
+LAYOUT_WIDTH, LAYOUT_HEIGHT, DEVICE_SCALE = 540, 960, 2
 
 class TextExtractor(HTMLParser):
     def __init__(self):
@@ -181,13 +182,21 @@ def render_html(source_file, duration, target):
     for old in frame_dir.glob("frame-*.png"): old.unlink()
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page(viewport={"width":WIDTH,"height":HEIGHT}, device_scale_factor=1)
+        page = browser.new_page(
+            viewport={"width": LAYOUT_WIDTH, "height": LAYOUT_HEIGHT},
+            device_scale_factor=DEVICE_SCALE,
+        )
         page.goto(source_file.resolve().as_uri(), wait_until="load")
         page.evaluate("document.fonts.ready")
         page.evaluate("() => document.getAnimations().forEach(a => a.pause())")
         for i in range(frame_count):
             page.evaluate("t => document.getAnimations().forEach(a => { a.currentTime = t; })", i*1000/FPS)
-            page.screenshot(path=str(frame_dir/f"frame-{i:06d}.png"), type="png", animations="allow")
+            page.screenshot(
+                path=str(frame_dir/f"frame-{i:06d}.png"),
+                type="png",
+                scale="device",
+                animations="allow",
+            )
         browser.close()
     run([FFMPEG,"-hide_banner","-loglevel","error","-y","-framerate",str(FPS),"-i",
          str(frame_dir/"frame-%06d.png"),"-an","-c:v","libx264","-preset","veryfast",
