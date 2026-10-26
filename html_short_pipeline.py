@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Render one inline-CSS HTML scene and publish it as a YouTube Short."""
 from __future__ import annotations
-import json, os, random, re, subprocess, sys, urllib.error, urllib.request
+import json, os, random, re, subprocess, sys, time, urllib.error, urllib.request
 from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
 from google.oauth2.credentials import Credentials
+from groq import Groq
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from playwright.sync_api import sync_playwright
@@ -80,35 +81,43 @@ def generate_with_gemini(api_key, prompt):
         "Content-Type": "application/json",
         "x-goog-api-key": api_key,
     })
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            data = json.load(response)
-    except urllib.error.HTTPError as error:
-        details = error.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Gemini API returned HTTP {error.code} for {model_name}: {details}") from error
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=90) as response:
+                data = json.load(response)
+            break
+        except urllib.error.HTTPError as error:
+            details = error.read().decode("utf-8", errors="replace")
+            retryable = error.code == 429 or error.code >= 500
+            if not retryable or attempt == 2:
+                raise RuntimeError(f"Gemini API returned HTTP {error.code} for {model_name}: {details}") from error
+            time.sleep(3 * (2 ** attempt))
+        except (TimeoutError, urllib.error.URLError) as error:
+            if attempt == 2:
+                raise RuntimeError(f"Gemini timed out after three attempts for {model_name}: {error}") from error
+            time.sleep(3 * (2 ** attempt))
     raw = data["candidates"][0]["content"]["parts"][0]["text"]
     return parse_metadata(raw, "Gemini")
 
 def generate_with_groq(api_key, prompt):
     model_name = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
-    endpoint = "https://api.groq.com/openai/v1/chat/completions"
-    payload = json.dumps({
-        "model": model_name,
-        "messages": [{"role": "user", "content": prompt}],
-        "response_format": {"type": "json_object"},
-    }).encode()
-    request = urllib.request.Request(endpoint, data=payload, headers={
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}",
-    })
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            data = json.load(response)
-    except urllib.error.HTTPError as error:
-        details = error.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Groq API returned HTTP {error.code} for {model_name}: {details}") from error
-    raw = data["choices"][0]["message"]["content"]
-    return parse_metadata(raw, "Groq")
+        client = Groq(api_key=api_key, timeout=90.0, max_retries=2)
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+        )
+    except Exception as error:
+        details = str(error)
+        if "1010" in details:
+            raise RuntimeError(
+                "Groq returned Cloudflare error 1010, which blocks this client signature. "
+                "The official Groq client is configured; contact Groq support if it persists. "
+                + details
+            ) from error
+        raise RuntimeError(f"Groq API request failed for {model_name}: {details}") from error
+    return parse_metadata(response.choices[0].message.content, "Groq")
 
 def generate_metadata(gemini_key, groq_key, scene_text):
     prompt = metadata_prompt(scene_text)
