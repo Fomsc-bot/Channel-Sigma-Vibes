@@ -29,36 +29,14 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
 
-      - name: Prepare apt archive cache
-        run: mkdir -p "$RUNNER_TEMP/apt-cache/archives/partial"
-
-      - name: Detect Ubuntu release
-        id: ubuntu-release
-        run: |
-          source /etc/os-release
-          echo "version=$VERSION_ID" >> "$GITHUB_OUTPUT"
-
-      - name: Cache apt package archives
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/apt-cache/archives
-          key: apt-${{ runner.os }}-${{ runner.arch }}-ubuntu-${{ steps.ubuntu-release.outputs.version }}-v1
-          restore-keys: |
-            apt-${{ runner.os }}-${{ runner.arch }}-ubuntu-${{ steps.ubuntu-release.outputs.version }}-
-
-      - name: Configure apt to keep cached packages
-        run: |
-          printf 'Dir::Cache::archives "%s/apt-cache/archives";\nAPT::Keep-Downloaded-Packages "true";\n' "$RUNNER_TEMP" | sudo tee /etc/apt/apt.conf.d/99actions-cache
-
-      - name: Install FFmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
-
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Verify bundled FFmpeg H.264 encoder
+        run: |
+          python -c 'import imageio_ffmpeg, subprocess; exe=imageio_ffmpeg.get_ffmpeg_exe(); info=subprocess.check_output([exe, "-hide_banner", "-encoders"], stderr=subprocess.STDOUT, text=True); assert "libx264" in info, "Bundled FFmpeg has no libx264 encoder"; print("Using bundled FFmpeg with libx264:", exe)'
 
       - name: Get Playwright version
         id: playwright-version

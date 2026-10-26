@@ -7,6 +7,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from google.oauth2.credentials import Credentials
 from groq import Groq
+import imageio_ffmpeg
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from playwright.sync_api import sync_playwright
@@ -17,6 +18,7 @@ MUSIC_DIR = ROOT / "Background_Music"
 OUTPUT_DIR = ROOT / "outputs"
 ROTATION_FILE = ROOT / "content" / "music_rotation.json"
 PUBLISH_STATE_FILE = ROOT / "content" / "publish_state.json"
+FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 WIDTH, HEIGHT, FPS = 1080, 1920, 30
 
 class TextExtractor(HTMLParser):
@@ -187,7 +189,7 @@ def render_html(source_file, duration, target):
             page.evaluate("t => document.getAnimations().forEach(a => { a.currentTime = t; })", i*1000/FPS)
             page.screenshot(path=str(frame_dir/f"frame-{i:06d}.png"), type="png", animations="allow")
         browser.close()
-    run(["ffmpeg","-hide_banner","-loglevel","error","-y","-framerate",str(FPS),"-i",
+    run([FFMPEG,"-hide_banner","-loglevel","error","-y","-framerate",str(FPS),"-i",
          str(frame_dir/"frame-%06d.png"),"-an","-c:v","libx264","-preset","veryfast",
          "-pix_fmt","yuv420p","-r",str(FPS),"-t",str(duration),str(target)])
     for frame in frame_dir.glob("frame-*.png"): frame.unlink()
@@ -206,7 +208,7 @@ def select_music():
     return selected
 
 def add_music(silent, music, final, duration):
-    run(["ffmpeg","-hide_banner","-loglevel","error","-y","-i",str(silent),"-stream_loop","-1","-i",str(music),
+    run([FFMPEG,"-hide_banner","-loglevel","error","-y","-i",str(silent),"-stream_loop","-1","-i",str(music),
          "-map","0:v:0","-map","1:a:0","-vf",f"fps={FPS},scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2",
          "-t",str(duration),"-r",str(FPS),"-c:v","libx264","-preset","veryfast","-pix_fmt","yuv420p",
          "-c:a","aac","-b:a","128k","-af","volume=0.18","-movflags","+faststart",str(final)])
