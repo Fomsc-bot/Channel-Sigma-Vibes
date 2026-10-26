@@ -43,11 +43,35 @@ def visible_text(source):
     parser.feed(source)
     return " ".join(parser.parts)[:5000]
 
-def generate_metadata(api_key, scene_text):
-    prompt = ("Create YouTube Shorts metadata for this exact video. Return JSON only with keys caption "
+def metadata_prompt(scene_text):
+    return ("Create YouTube Shorts metadata for this exact video. Return JSON only with keys caption "
       "and hashtags. Caption: maximum four words, relevant, accurate, and no emoji. Hashtags: exactly "
       "four relevant hashtags, each starting with #, no spaces. Do not promise views or make claims "
       "unsupported by the video.\n\nVideo text: " + scene_text)
+
+def parse_metadata(raw, provider):
+    result = json.loads(raw)
+    if not isinstance(result, dict):
+        raise ValueError(f"{provider} returned metadata that is not a JSON object")
+    caption = " ".join(str(result.get("caption", "")).split())
+    caption = re.sub(r"[#\W]+$", "", caption).strip()
+    if not caption or len(caption.split()) > 4:
+        raise ValueError(f"{provider} caption must be one to four words")
+    raw_tags = result.get("hashtags", [])
+    if not isinstance(raw_tags, list):
+        raise ValueError(f"{provider} hashtags must be a JSON list")
+    tags = []
+    for item in raw_tags:
+        tag = "#" + re.sub(r"[^A-Za-z0-9_]", "", str(item).lstrip("#"))
+        if tag != "#" and tag.lower() not in {t.lower() for t in tags}:
+            tags.append(tag)
+        if len(tags) == 4:
+            break
+    if len(tags) < 3:
+        raise ValueError(f"{provider} must return at least three relevant hashtags")
+    return caption, tags
+
+def generate_with_gemini(api_key, prompt):
     model_name = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
     payload = json.dumps({"contents":[{"parts":[{"text":prompt}]}],
@@ -62,17 +86,47 @@ def generate_metadata(api_key, scene_text):
     except urllib.error.HTTPError as error:
         details = error.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"Gemini API returned HTTP {error.code} for {model_name}: {details}") from error
-    result = json.loads(data["candidates"][0]["content"]["parts"][0]["text"])
-    caption = " ".join(str(result.get("caption", "")).split())
-    caption = re.sub(r"[#\W]+$", "", caption).strip()
-    if not caption or len(caption.split()) > 4: raise ValueError("Gemini caption must be one to four words")
-    tags = []
-    for item in result.get("hashtags", []):
-        tag = "#" + re.sub(r"[^A-Za-z0-9_]", "", str(item).lstrip("#"))
-        if tag != "#" and tag.lower() not in {t.lower() for t in tags}: tags.append(tag)
-        if len(tags) == 4: break
-    if len(tags) < 3: raise ValueError("Gemini must return at least three relevant hashtags")
-    return caption, tags
+    raw = data["candidates"][0]["content"]["parts"][0]["text"]
+    return parse_metadata(raw, "Gemini")
+
+def generate_with_groq(api_key, prompt):
+    model_name = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
+    endpoint = "https://api.groq.com/openai/v1/chat/completions"
+    payload = json.dumps({
+        "model": model_name,
+        "messages": [{"role": "user", "content": prompt}],
+        "response_format": {"type": "json_object"},
+    }).encode()
+    request = urllib.request.Request(endpoint, data=payload, headers={
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    })
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            data = json.load(response)
+    except urllib.error.HTTPError as error:
+        details = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Groq API returned HTTP {error.code} for {model_name}: {details}") from error
+    raw = data["choices"][0]["message"]["content"]
+    return parse_metadata(raw, "Groq")
+
+def generate_metadata(gemini_key, groq_key, scene_text):
+    prompt = metadata_prompt(scene_text)
+    failures = []
+    if gemini_key:
+        try:
+            return generate_with_gemini(gemini_key, prompt)
+        except Exception as error:
+            failures.append(f"Gemini: {error}")
+            print(f"Gemini metadata request failed; trying Groq fallback. {error}", file=sys.stderr)
+    if groq_key:
+        try:
+            return generate_with_groq(groq_key, prompt)
+        except Exception as error:
+            failures.append(f"Groq: {error}")
+    if not failures:
+        raise RuntimeError("Set GEMINI_API_KEY or GROQ_API_KEY for caption and hashtag generation")
+    raise RuntimeError("No metadata provider succeeded. " + " | ".join(failures))
 
 def render_html(source_file, duration, target):
     frame_count = round(duration * FPS)
@@ -126,8 +180,10 @@ def upload(video, caption, tags):
     return result["id"]
 
 def main():
-    if not os.environ.get("GEMINI_API_KEY") or any(not os.environ.get(k) for k in ("YT_CLIENT_ID","YT_CLIENT_SECRET","YT_REFRESH_TOKEN")):
-        raise RuntimeError("Set GEMINI_API_KEY and the YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN secrets")
+    if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GROQ_API_KEY")):
+        raise RuntimeError("Set GEMINI_API_KEY or GROQ_API_KEY for metadata generation")
+    if any(not os.environ.get(k) for k in ("YT_CLIENT_ID","YT_CLIENT_SECRET","YT_REFRESH_TOKEN")):
+        raise RuntimeError("Set the YT_CLIENT_ID, YT_CLIENT_SECRET, and YT_REFRESH_TOKEN secrets")
     candidates = sorted(INPUT_DIR.glob("*.html"))
     if not candidates:
         print("No HTML scenes remain.")
@@ -135,7 +191,7 @@ def main():
     source = candidates[0]
     markup = source.read_text(encoding="utf-8")
     duration = parse_duration(markup)
-    caption, tags = generate_metadata(os.environ["GEMINI_API_KEY"], visible_text(markup))
+    caption, tags = generate_metadata(os.environ.get("GEMINI_API_KEY"), os.environ.get("GROQ_API_KEY"), visible_text(markup))
     OUTPUT_DIR.mkdir(parents=True,exist_ok=True)
     silent = OUTPUT_DIR / (source.stem+"-silent.mp4")
     final = OUTPUT_DIR / (source.stem+".mp4")
