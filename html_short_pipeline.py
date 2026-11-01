@@ -6,7 +6,7 @@ from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
 from google.oauth2.credentials import Credentials
-from groq import Groq
+from google import genai
 import imageio_ffmpeg
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -49,91 +49,100 @@ def visible_text(source):
     return " ".join(parser.parts)[:5000]
 
 def metadata_prompt(scene_text):
-    return ("Create YouTube Shorts metadata for this exact video. Return JSON only with keys caption "
-      "and hashtags, where hashtags is a JSON array of exactly three strings. Caption: maximum four "
-      "words, relevant, accurate, and no emoji. Hashtags: relevant topic hashtags, each starting with # "
-      "and containing no spaces. Do not include #Shorts because "
-      "it is added automatically. Do not promise views or make claims unsupported by the video."
-      "\n\nVideo text: " + scene_text)
+    return (
+        "Create accurate, platform-specific metadata for the exact short video described below. "
+        "Return a JSON object with exactly these keys: youtube_title, youtube_description, "
+        "youtube_keywords, facebook_caption, facebook_hashtags. "
+        "YouTube: write a clear, compelling title of at most 100 characters; a concise, natural "
+        "description that includes relevant subject keywords; and an array of 5 to 8 specific "
+        "search keywords as plain phrases without #. Do not add #Shorts. "
+        "Facebook Reels: there is no separate title field, so the first line of facebook_caption "
+        "must be an accurate, curiosity-driven hook that matches the video; then add one short "
+        "context line using natural subject keywords and one soft, relevant call to action. Keep "
+        "the caption under 100 words. Return exactly two relevant niche hashtags in "
+        "facebook_hashtags, each starting with # and containing no spaces; the publisher adds "
+        "one broad Reels hashtag and the reusable #SigmaVibes brand hashtag. "
+        "Avoid generic tags such as #viral, #trending, and #foryou, engagement bait, clickbait, "
+        "unsupported claims, and promises of views or virality. Do not invent details not present "
+        "in the video.\n\nVideo text:\n" + scene_text
+    )
 
 def parse_metadata(raw, provider):
     result = json.loads(raw)
     if not isinstance(result, dict):
         raise ValueError(f"{provider} returned metadata that is not a JSON object")
-    caption = " ".join(str(result.get("caption", "")).split())
-    caption = re.sub(r"[#\W]+$", "", caption).strip()
-    if not caption or len(caption.split()) > 4:
-        raise ValueError(f"{provider} caption must be one to four words")
-    raw_tags = result.get("hashtags", [])
-    if isinstance(raw_tags, str):
-        raw_tags = re.findall(r"#?[A-Za-z0-9_]+", raw_tags)
-    elif not isinstance(raw_tags, list):
-        raise ValueError(f"{provider} hashtags must be a JSON array or a string")
-    topic_tags = []
-    for item in raw_tags:
+
+    youtube_title = " ".join(str(result.get("youtube_title", "")).split())
+    if not youtube_title or len(youtube_title) > 100:
+        raise ValueError(f"{provider} YouTube title must be between 1 and 100 characters")
+
+    youtube_description = " ".join(str(result.get("youtube_description", "")).split())
+    if not youtube_description or len(youtube_description) > 5000:
+        raise ValueError(f"{provider} YouTube description must be between 1 and 5000 characters")
+
+    raw_keywords = result.get("youtube_keywords")
+    if not isinstance(raw_keywords, list):
+        raise ValueError(f"{provider} YouTube keywords must be a JSON array")
+    youtube_keywords = []
+    for item in raw_keywords:
+        keyword = " ".join(str(item).replace("#", "").split()).strip(" ,")
+        if keyword and keyword.casefold() not in {tag.casefold() for tag in youtube_keywords}:
+            youtube_keywords.append(keyword[:100])
+        if len(youtube_keywords) == 8:
+            break
+    if not 5 <= len(youtube_keywords) <= 8:
+        raise ValueError(f"{provider} must return five to eight unique YouTube keywords")
+
+    facebook_caption = str(result.get("facebook_caption", "")).strip()
+    facebook_caption = "\n".join(
+        " ".join(line.split()) for line in facebook_caption.splitlines() if line.strip()
+    )
+    if not facebook_caption or len(facebook_caption.split()) > 100:
+        raise ValueError(f"{provider} Facebook caption must be between 1 and 100 words")
+
+    raw_hashtags = result.get("facebook_hashtags")
+    if not isinstance(raw_hashtags, list):
+        raise ValueError(f"{provider} Facebook hashtags must be a JSON array")
+    facebook_hashtags = []
+    for item in raw_hashtags:
         tag = "#" + re.sub(r"[^A-Za-z0-9_]", "", str(item).lstrip("#"))[:28]
-        if tag != "#" and tag.lower() != "#shorts" and tag.lower() not in {t.lower() for t in topic_tags}:
-            topic_tags.append(tag)
-        if len(topic_tags) == 3:
+        if (tag != "#" and tag.casefold() not in {
+            "#viral", "#trending", "#foryou", "#shorts", "#fbreels",
+            "#facebookreels", "#sigmavibes",
+        } and tag.casefold() not in {existing.casefold() for existing in facebook_hashtags}):
+            facebook_hashtags.append(tag)
+        if len(facebook_hashtags) == 2:
             break
-    tags = ["#shorts"]
-    for tag in topic_tags + ["#Motivation", "#Mindset", "#Sigma"]:
-        if tag.lower() not in {t.lower() for t in tags}:
-            tags.append(tag)
-        if len(tags) == 4:
-            break
-    return caption, tags
+    if len(facebook_hashtags) != 2:
+        raise ValueError(f"{provider} must return exactly two relevant Facebook niche hashtags")
 
-def related_emoji(scene_text, caption):
-    text = (scene_text + " " + caption).casefold()
-    choices = [
-        (("self-love", "self love", "love", "kindness", "compassion", "heart"), "\U0001F49B"),
-        (("courage", "fear", "brave", "bold", "fearless"), "\U0001F981"),
-        (("mindset", "wisdom", "think", "thought", "philosophy", "mind"), "\U0001F9E0"),
-        (("discipline", "success", "focus", "goal", "action", "habit", "motivation"), "\U000026A1"),
-        (("growth", "healing", "heal", "change", "begin", "start"), "\U0001F331"),
-    ]
-    for keywords, emoji in choices:
-        if any(keyword in text for keyword in keywords):
-            return emoji
-    return "\U00002728"
+    return {
+        "youtube_title": youtube_title,
+        "youtube_description": youtube_description,
+        "youtube_keywords": youtube_keywords,
+        "facebook_caption": facebook_caption,
+        "facebook_hashtags": facebook_hashtags,
+    }
 
-def build_title(caption, emoji, tags):
-    selected_tags = list(tags)
-    title = f"{caption} {emoji} {' '.join(selected_tags)}"
-    while len(title) > 100 and len(selected_tags) > 1:
-        selected_tags.pop()
-        title = f"{caption} {emoji} {' '.join(selected_tags)}"
-    if len(title) > 100:
-        suffix = f" {emoji} {' '.join(selected_tags)}"
-        caption = caption[:max(1, 100 - len(suffix))].rstrip()
-        title = caption + suffix
-    return title
-
-def generate_with_groq(api_key, prompt):
-    model_name = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
+def generate_with_gemini(api_key, prompt):
+    model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
     try:
-        client = Groq(api_key=api_key, timeout=90.0, max_retries=2)
-        response = client.chat.completions.create(
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
             model=model_name,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
+            contents=prompt,
+            config={"response_mime_type": "application/json"},
         )
     except Exception as error:
-        details = str(error)
-        if "1010" in details:
-            raise RuntimeError(
-                "Groq returned Cloudflare error 1010, which blocks this client signature. "
-                "The official Groq client is configured; contact Groq support if it persists. "
-                + details
-            ) from error
-        raise RuntimeError(f"Groq API request failed for {model_name}: {details}") from error
-    return parse_metadata(response.choices[0].message.content, "Groq")
+        raise RuntimeError(f"Gemini API request failed for {model_name}: {error}") from error
+    if not response.text:
+        raise RuntimeError(f"Gemini returned no metadata for {model_name}")
+    return parse_metadata(response.text, "Gemini")
 
-def generate_metadata(groq_key, scene_text):
-    if not groq_key:
-        raise RuntimeError("Set GROQ_API_KEY for caption and hashtag generation")
-    return generate_with_groq(groq_key, metadata_prompt(scene_text))
+def generate_metadata(gemini_key, scene_text):
+    if not gemini_key:
+        raise RuntimeError("Set GEMINI_API_KEY for metadata generation")
+    return generate_with_gemini(gemini_key, metadata_prompt(scene_text))
 
 def render_html(source_file, duration, target):
     frame_count = round(duration * FPS)
@@ -182,19 +191,20 @@ def add_music(silent, music, final, duration):
          "-t",str(duration),"-r",str(FPS),"-c:v","libx264","-preset","veryfast","-pix_fmt","yuv420p",
          "-c:a","aac","-b:a","128k","-af","volume=0.18","-movflags","+faststart",str(final)])
 
-def upload_youtube(video, caption, emoji, tags):
+def upload_youtube(video, metadata):
     credentials = Credentials(None, refresh_token=os.environ["YT_REFRESH_TOKEN"],
       token_uri="https://oauth2.googleapis.com/token", client_id=os.environ["YT_CLIENT_ID"],
       client_secret=os.environ["YT_CLIENT_SECRET"], scopes=["https://www.googleapis.com/auth/youtube.upload"])
     youtube = build("youtube","v3",credentials=credentials)
     result = youtube.videos().insert(part="snippet,status",body={
-      "snippet":{"title":build_title(caption, emoji, tags),"description":caption+"\n\n"+" ".join(tags),
-                 "tags":[t[1:] for t in tags],"categoryId":"22"},
+      "snippet":{"title":metadata["youtube_title"],
+                 "description":metadata["youtube_description"],
+                 "tags":metadata["youtube_keywords"],"categoryId":"22"},
       "status":{"privacyStatus":"public","selfDeclaredMadeForKids":False}},
       media_body=MediaFileUpload(str(video),mimetype="video/mp4",resumable=True)).execute()
     return result["id"]
 
-def upload_facebook_reel(video, caption, emoji, tags):
+def upload_facebook_reel(video, metadata):
     """Upload and publish a Reel to the configured Facebook Page."""
     page_id = os.environ["FB_PAGE_ID"]
     token = os.environ["FB_PAGE_ACCESS_TOKEN"]
@@ -237,20 +247,16 @@ def upload_facebook_reel(video, caption, emoji, tags):
     if uploaded.get("success") is not True:
         raise RuntimeError(f"Facebook Reel upload was not confirmed: {uploaded}")
 
-    facebook_tags = []
-    for tag in tags:
-        if tag.casefold() not in {"#sigma", "#sigmamale"} and tag.casefold() not in {
-            existing.casefold() for existing in facebook_tags
-        }:
-            facebook_tags.append(tag)
-    facebook_tags.extend(["#sigma", "#Sigmamale"])
+    facebook_tags = ["#fbreels"] + metadata["facebook_hashtags"] + ["#SigmaVibes"]
+    facebook_caption = metadata["facebook_caption"] + "\n\n" + " ".join(facebook_tags)
+    facebook_title = metadata["facebook_caption"].splitlines()[0][:100]
 
     finished = post_form(f"{api_root}/{page_id}/video_reels", {
         "upload_phase": "finish",
         "video_id": video_id,
         "video_state": "PUBLISHED",
-        "title": build_title(caption, emoji, tags),
-        "description": caption + "\n\n" + " ".join(facebook_tags),
+        "title": facebook_title,
+        "description": facebook_caption,
         "access_token": token,
     })
     if finished.get("success") is not True:
@@ -267,8 +273,8 @@ def save_publish_state(state):
     PUBLISH_STATE_FILE.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
 
 def main():
-    if not os.environ.get("GROQ_API_KEY"):
-        raise RuntimeError("Set GROQ_API_KEY for metadata generation")
+    if not os.environ.get("GEMINI_API_KEY"):
+        raise RuntimeError("Set GEMINI_API_KEY for metadata generation")
     required = ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN", "FB_PAGE_ID", "FB_PAGE_ACCESS_TOKEN")
     missing = [key for key in required if not os.environ.get(key)]
     if missing:
@@ -283,8 +289,7 @@ def main():
     scene_text = visible_text(markup)
     state = load_publish_state()
     delivery = state.setdefault(source.name, {})
-    caption, tags = generate_metadata(os.environ.get("GROQ_API_KEY"), scene_text)
-    emoji = related_emoji(scene_text, caption)
+    metadata = generate_metadata(os.environ.get("GEMINI_API_KEY"), scene_text)
     OUTPUT_DIR.mkdir(parents=True,exist_ok=True)
     silent = OUTPUT_DIR / (source.stem+"-silent.mp4")
     final = OUTPUT_DIR / (source.stem+".mp4")
@@ -292,17 +297,18 @@ def main():
     add_music(silent,select_music(),final,duration)
     silent.unlink(missing_ok=True)
     if not delivery.get("youtube_video_id"):
-        delivery["youtube_video_id"] = upload_youtube(final, caption, emoji, tags)
+        delivery["youtube_video_id"] = upload_youtube(final, metadata)
         save_publish_state(state)
     if not delivery.get("facebook_reel_id"):
-        delivery["facebook_reel_id"] = upload_facebook_reel(final, caption, emoji, tags)
+        delivery["facebook_reel_id"] = upload_facebook_reel(final, metadata)
         save_publish_state(state)
     source.unlink()
     youtube_id, facebook_id = delivery["youtube_video_id"], delivery["facebook_reel_id"]
     state.pop(source.name, None)
     save_publish_state(state)
     print(f"Published {source.name} to YouTube ({youtube_id}) and Facebook ({facebook_id}); removed source HTML.")
-    print(f"Title: {build_title(caption, emoji, tags)}")
+    print(f"YouTube title: {metadata['youtube_title']}")
+    print(f"Facebook hook: {metadata['facebook_caption'].splitlines()[0]}")
 
 if __name__ == "__main__":
     try: main()
