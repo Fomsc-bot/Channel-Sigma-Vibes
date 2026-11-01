@@ -52,10 +52,17 @@ def metadata_prompt(scene_text):
     return (
         "Create accurate, platform-specific metadata for the exact short video described below. "
         "Return a JSON object with exactly these keys: youtube_title, youtube_description, "
-        "youtube_keywords, facebook_caption, facebook_hashtags. "
-        "YouTube: write a clear, compelling title of at most 100 characters; a concise, natural "
-        "description that includes relevant subject keywords; and an array of 5 to 8 specific "
-        "search keywords as plain phrases without #. Do not add #Shorts. "
+        "youtube_keywords, youtube_hashtags, facebook_caption, facebook_hashtags. "
+        "YouTube only: identify one focused search phrase that accurately describes the video. "
+        "Put it first in youtube_keywords and begin both the title and first description sentence "
+        "with that exact phrase. Keep the title under 60 characters, clear and "
+        "compelling, using a fitting question, result, contrast, or direct-instruction format. "
+        "Do not put hashtags in the title. Write a natural description of 150 to 500 characters: "
+        "put the primary keyword in its first sentence, add useful supporting context and one "
+        "relevant, non-begging call to action, and do not include hashtags in the description "
+        "field. Return 5 to 8 specific YouTube search keywords as plain phrases without #, and "
+        "2 to 4 relevant YouTube hashtags as strings starting with #, including a broad topic "
+        "and a niche tag. The publisher adds #Shorts to the end of the description. "
         "Facebook Reels: there is no separate title field, so the first line of facebook_caption "
         "must be an accurate, curiosity-driven hook that matches the video; then add one short "
         "context line using natural subject keywords and one soft, relevant call to action. Keep "
@@ -73,12 +80,16 @@ def parse_metadata(raw, provider):
         raise ValueError(f"{provider} returned metadata that is not a JSON object")
 
     youtube_title = " ".join(str(result.get("youtube_title", "")).split())
-    if not youtube_title or len(youtube_title) > 100:
-        raise ValueError(f"{provider} YouTube title must be between 1 and 100 characters")
+    if not youtube_title or len(youtube_title) > 60:
+        raise ValueError(f"{provider} YouTube title must be between 1 and 60 characters")
+    if "#" in youtube_title:
+        raise ValueError(f"{provider} YouTube title must not contain hashtags")
 
     youtube_description = " ".join(str(result.get("youtube_description", "")).split())
     if not youtube_description or len(youtube_description) > 5000:
         raise ValueError(f"{provider} YouTube description must be between 1 and 5000 characters")
+    if "#" in youtube_description:
+        raise ValueError(f"{provider} YouTube description must not contain hashtags in its base text")
 
     raw_keywords = result.get("youtube_keywords")
     if not isinstance(raw_keywords, list):
@@ -92,6 +103,28 @@ def parse_metadata(raw, provider):
             break
     if not 5 <= len(youtube_keywords) <= 8:
         raise ValueError(f"{provider} must return five to eight unique YouTube keywords")
+    primary_keyword = youtube_keywords[0]
+    if not youtube_title.casefold().startswith(primary_keyword.casefold()):
+        raise ValueError(f"{provider} YouTube title must begin with its primary search keyword")
+
+    raw_youtube_hashtags = result.get("youtube_hashtags")
+    if not isinstance(raw_youtube_hashtags, list):
+        raise ValueError(f"{provider} YouTube hashtags must be a JSON array")
+    youtube_hashtags = []
+    for item in raw_youtube_hashtags:
+        tag = "#" + re.sub(r"[^A-Za-z0-9_]", "", str(item).lstrip("#"))[:28]
+        if (tag != "#" and tag.casefold() != "#shorts"
+                and tag.casefold() not in {existing.casefold() for existing in youtube_hashtags}):
+            youtube_hashtags.append(tag)
+        if len(youtube_hashtags) == 4:
+            break
+    if not 2 <= len(youtube_hashtags) <= 4:
+        raise ValueError(f"{provider} must return two to four unique YouTube topic hashtags")
+    youtube_description += "\n\n" + " ".join(youtube_hashtags + ["#Shorts"])
+    if not 150 <= len(youtube_description) <= 500:
+        raise ValueError(
+            f"{provider} YouTube description with hashtags must be between 150 and 500 characters"
+        )
 
     facebook_caption = str(result.get("facebook_caption", "")).strip()
     facebook_caption = "\n".join(
@@ -99,6 +132,9 @@ def parse_metadata(raw, provider):
     )
     if not facebook_caption or len(facebook_caption.split()) > 100:
         raise ValueError(f"{provider} Facebook caption must be between 1 and 100 words")
+
+    if not youtube_description.casefold().startswith(primary_keyword.casefold()):
+        raise ValueError(f"{provider} YouTube description must begin with its primary search keyword")
 
     raw_hashtags = result.get("facebook_hashtags")
     if not isinstance(raw_hashtags, list):
@@ -120,6 +156,7 @@ def parse_metadata(raw, provider):
         "youtube_title": youtube_title,
         "youtube_description": youtube_description,
         "youtube_keywords": youtube_keywords,
+        "youtube_hashtags": youtube_hashtags + ["#Shorts"],
         "facebook_caption": facebook_caption,
         "facebook_hashtags": facebook_hashtags,
     }
