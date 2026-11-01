@@ -125,7 +125,7 @@ def parse_metadata(raw, provider):
     }
 
 def generate_with_gemini(api_key, prompt):
-    model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    model_name = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
     try:
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
