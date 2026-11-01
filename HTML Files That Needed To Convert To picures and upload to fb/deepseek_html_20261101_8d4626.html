@@ -1,0 +1,38 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Quote 75</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,700&family=Inter:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--w:1080px;--h:1920px;--ink:#2a1f1a;--accent:#7c2d12;--soft:#6a5040;}
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000}
+.stage{position:relative;width:var(--w);height:var(--h);overflow:hidden;
+background:
+radial-gradient(60% 40% at 30% 15%,#faf3e8 0%,transparent 55%),
+radial-gradient(55% 45% at 80% 85%,#f5e8d4 0%,transparent 55%),
+linear-gradient(170deg,#fdf8ef 0%,#f2e6ce 55%,#e0ccaa 100%);
+color:var(--ink);font-family:'Inter',Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.frame{position:absolute;inset:80px;border:3px solid var(--accent);z-index:1}
+.frame::before{content:"";position:absolute;inset:12px;border:1px solid rgba(124,45,18,.4)}
+.corner{position:absolute;width:140px;height:140px;pointer-events:none;z-index:2}
+.corner svg{width:100%;height:100%}
+.corner.tl{top:60px;left:60px}
+.corner.tr{top:60px;right:60px;transform:rotate(90deg)}
+.corner.br{bottom:60px;right:60px;transform:rotate(180deg)}
+.corner.bl{bottom:60px;left:60px;transform:rotate(270deg)}
+.stage::after{content:"";position:absolute;inset:0;background:radial-gradient(75% 55% at 50% 50%,rgba(0,0,0,0) 60%,rgba(80,50,20,.16) 100%);pointer-events:none}
+.safe{position:absolute;inset:340px 150px 340px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:3}
+.orn{font-family:'Cormorant Garamond',serif;font-size:44px;color:var(--accent);margin-bottom:48px;letter-spacing:8px}
+.quote{font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-weight:700;font-size:108px;line-height:1.1;letter-spacing:-.5px}
+.author{margin-top:56px;font-size:26px;font-weight:500;letter-spacing:.3em;text-transform:uppercase;color:var(--accent)}
+.brand{position:absolute;bottom:160px;left:0;right:0;text-align:center;font-size:16px;letter-spacing:.44em;text-transform:uppercase;color:rgba(106,80,64,.85);z-index:3}
+</style></head><body>
+<div class="stage">
+<div class="frame"></div>
+<div class="corner tl"><svg viewBox="0 0 140 140" fill="none" stroke="#7c2d12" stroke-width="1.6"><path d="M0 30 Q30 30 30 0 M10 70 Q50 50 70 10 M0 0 L140 0 L140 20"/><circle cx="60" cy="20" r="4"/></svg></div>
+<div class="corner tr"><svg viewBox="0 0 140 140" fill="none" stroke="#7c2d12" stroke-width="1.6"><path d="M0 30 Q30 30 30 0 M10 70 Q50 50 70 10 M0 0 L140 0 L140 20"/><circle cx="60" cy="20" r="4"/></svg></div>
+<div class="corner br"><svg viewBox="0 0 140 140" fill="none" stroke="#7c2d12" stroke-width="1.6"><path d="M0 30 Q30 30 30 0 M10 70 Q50 50 70 10 M0 0 L140 0 L140 20"/><circle cx="60" cy="20" r="4"/></svg></div>
+<div class="corner bl"><svg viewBox="0 0 140 140" fill="none" stroke="#7c2d12" stroke-width="1.6"><path d="M0 30 Q30 30 30 0 M10 70 Q50 50 70 10 M0 0 L140 0 L140 20"/><circle cx="60" cy="20" r="4"/></svg></div>
+<div class="safe">
+<p class="orn">✦ ❦ ✦</p>
+<p class="quote">Beauty begins the moment you decide to be yourself.</p>
+<p class="author">Coco Chanel</p>
+</div><p class="brand">Daily Motivation</p></div>
+</body></html>

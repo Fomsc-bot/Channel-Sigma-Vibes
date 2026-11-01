@@ -1,0 +1,23 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Quote 01</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{--w:1080px;--h:1920px;--ink:#f7f4ec;--soft:#a9bbd2;--accent:#e3b74c;}
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000}
+.stage{position:relative;width:var(--w);height:var(--h);overflow:hidden;color:var(--ink);
+background:radial-gradient(110% 60% at 50% 0%,#24527f 0%,rgba(36,82,127,0) 62%),
+linear-gradient(170deg,#1b4574 0%,#0f2645 52%,#071322 100%);
+-webkit-font-smoothing:antialiased;font-family:'Inter',Arial,sans-serif}
+.stage::before{content:"";position:absolute;inset:0;background:radial-gradient(72% 52% at 50% 50%,rgba(0,0,0,0) 52%,rgba(0,0,0,.42) 100%);pointer-events:none}
+.safe{position:absolute;inset:300px 96px 320px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.rule{width:76px;height:3px;border-radius:2px;background:var(--accent);margin-bottom:64px}
+.quote{font-family:'Playfair Display',Georgia,serif;font-weight:700;font-size:88px;line-height:1.18;letter-spacing:-.5px}
+.author{margin-top:52px;font-size:32px;font-weight:500;letter-spacing:.20em;text-transform:uppercase;color:var(--soft)}
+.brand{margin-top:96px;font-size:21px;font-weight:600;letter-spacing:.34em;text-transform:uppercase;color:rgba(255,255,255,.48)}
+</style></head><body>
+<div class="stage"><div class="safe">
+<div class="rule"></div>
+<p class="quote">Believe you can and you&rsquo;re halfway there.</p>
+<p class="author">Theodore Roosevelt</p>
+<p class="brand">Daily Motivation</p>
+</div></div>
+</body></html>

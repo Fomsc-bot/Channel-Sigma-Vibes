@@ -1,0 +1,36 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Quote 49</title>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Inter:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--w:1080px;--h:1920px;--ink:#2a2520;--accent:#8a5a2b;--soft:#6b6058;}
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000}
+.stage{position:relative;width:var(--w);height:var(--h);overflow:hidden;
+background:
+radial-gradient(80% 60% at 50% 40%,#f4ede0 0%,#e8dcc5 55%,#d6c4a4 100%);
+color:var(--ink);font-family:'Inter',Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(1.4px 1.4px at 20% 30%,rgba(100,70,30,.06) 50%,transparent 51%),radial-gradient(1.4px 1.4px at 70% 65%,rgba(100,70,30,.06) 50%,transparent 51%);background-size:180px 180px,220px 220px;pointer-events:none}
+.polaroid{position:absolute;inset:200px 110px 340px;background:#fdfbf6;box-shadow:0 24px 70px rgba(60,40,20,.35),0 4px 14px rgba(60,40,20,.2);transform:rotate(-1.5deg);z-index:2}
+.polaroid::before{content:"";position:absolute;inset:36px 36px 180px;background:linear-gradient(160deg,#c9d6c0 0%,#a8b99e 45%,#7f9274 100%);z-index:1}
+.polaroid::after{content:"";position:absolute;inset:36px 36px 180px;
+background-image:
+radial-gradient(2.4px 2.4px at 30% 40%,rgba(255,255,255,.3) 50%,transparent 51%),
+radial-gradient(2px 2px at 70% 60%,rgba(255,255,255,.25) 50%,transparent 51%);
+pointer-events:none;z-index:2}
+.tape{position:absolute;top:-22px;left:50%;transform:translateX(-50%) rotate(-4deg);width:180px;height:44px;background:rgba(240,220,170,.85);box-shadow:0 4px 10px rgba(60,40,20,.25);z-index:3}
+.caption{position:absolute;bottom:40px;left:40px;right:40px;text-align:center;z-index:3}
+.quote{font-family:'Caveat',cursive;font-weight:700;font-size:54px;line-height:1.1;color:var(--ink);letter-spacing:-.5px}
+.author{margin-top:12px;font-size:20px;font-weight:500;letter-spacing:.28em;text-transform:uppercase;color:var(--accent)}
+.safe{position:absolute;inset:300px 170px 500px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:4}
+.overlay{font-family:'Caveat',cursive;font-weight:700;font-size:88px;line-height:1.1;color:#fff;text-shadow:0 4px 18px rgba(0,0,0,.55),0 1px 3px rgba(0,0,0,.4);letter-spacing:-.5px}
+.brand{position:absolute;bottom:120px;left:0;right:0;text-align:center;font-size:16px;letter-spacing:.44em;text-transform:uppercase;color:rgba(107,96,88,.8);z-index:3}
+</style></head><body>
+<div class="stage">
+<div class="polaroid"><div class="tape"></div>
+<div class="safe"><p class="overlay">Good things<br>take time.</p></div>
+<div class="caption">
+<p class="quote">Trust the process — unknown</p>
+<p class="author">Daily Motivation</p>
+</div>
+</div>
+<p class="brand">Daily Motivation</p>
+</div>
+</body></html>

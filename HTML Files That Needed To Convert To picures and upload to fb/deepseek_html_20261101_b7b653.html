@@ -1,0 +1,26 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Quote 33</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,900&family=Inter:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--w:1080px;--h:1920px;--ink:#2b1a0a;--accent:#c47a1a;--soft:#7a5c38;}
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000}
+.stage{position:relative;width:var(--w);height:var(--h);overflow:hidden;
+background:
+radial-gradient(70% 50% at 50% 20%,#ffe9b8 0%,transparent 65%),
+linear-gradient(180deg,#f5d98a 0%,#e8b85a 45%,#c98a2e 100%);
+color:var(--ink);font-family:'Inter',Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.stage::after{content:"";position:absolute;inset:0;background:radial-gradient(70% 55% at 50% 50%,rgba(0,0,0,0) 55%,rgba(90,50,10,.28) 100%);pointer-events:none}
+.rays{position:absolute;top:-20%;left:50%;transform:translateX(-50%);width:1400px;height:1400px;
+background:conic-gradient(from 0deg,rgba(255,255,255,.14) 0 8deg,transparent 8deg 24deg);
+opacity:.5;pointer-events:none;border-radius:50%}
+.safe{position:absolute;inset:300px 100px 320px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2}
+.sun{width:64px;height:64px;border-radius:50%;background:radial-gradient(circle at 40% 40%,#fff8dc,#e8a93a);box-shadow:0 0 40px 10px rgba(255,200,80,.55);margin-bottom:56px}
+.quote{font-family:'Playfair Display',Georgia,serif;font-style:italic;font-weight:900;font-size:100px;line-height:1.14;letter-spacing:-.5px}
+.author{margin-top:56px;font-size:28px;font-weight:500;letter-spacing:.28em;text-transform:uppercase;color:var(--accent)}
+.brand{position:absolute;bottom:80px;left:0;right:0;text-align:center;font-size:18px;letter-spacing:.44em;text-transform:uppercase;color:rgba(122,92,56,.85);z-index:2}
+</style></head><body>
+<div class="stage"><div class="rays"></div><div class="safe">
+<div class="sun"></div>
+<p class="quote">The sun himself is weak when he first rises, and gathers strength as the day goes on.</p>
+<p class="author">Charles Dickens</p>
+</div><p class="brand">Daily Motivation</p></div>
+</body></html>

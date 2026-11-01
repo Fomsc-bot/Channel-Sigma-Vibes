@@ -1,0 +1,43 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Quote 50</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,900&family=Inter:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--w:1080px;--h:1920px;--ink:#f4fbe8;--accent:#a3e635;--soft:#a8c79a;}
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000}
+.stage{position:relative;width:var(--w);height:var(--h);overflow:hidden;
+background:
+radial-gradient(70% 50% at 30% 20%,#166534 0%,transparent 55%),
+radial-gradient(60% 40% at 80% 80%,#14532d 0%,transparent 60%),
+linear-gradient(165deg,#052e16 0%,#064e3b 45%,#022c22 100%);
+color:var(--ink);font-family:'Inter',Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.leaf{position:absolute;pointer-events:none;opacity:.5}
+.leaf.tl{top:-60px;left:-80px;transform:rotate(-25deg)}
+.leaf.br{bottom:-80px;right:-100px;transform:rotate(155deg)}
+.leaf.tr{top:80px;right:-120px;transform:rotate(40deg);opacity:.35}
+.leaf svg{width:420px;height:420px}
+.safe{position:absolute;inset:300px 110px 340px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2}
+.kicker{font-size:22px;letter-spacing:.46em;text-transform:uppercase;color:var(--accent);margin-bottom:48px;font-weight:600}
+.quote{font-family:'Playfair Display',Georgia,serif;font-style:italic;font-weight:900;font-size:100px;line-height:1.14;letter-spacing:-.5px}
+.author{margin-top:56px;font-size:28px;font-weight:500;letter-spacing:.28em;text-transform:uppercase;color:var(--accent)}
+.brand{position:absolute;bottom:80px;left:0;right:0;text-align:center;font-size:18px;letter-spacing:.44em;text-transform:uppercase;color:rgba(168,199,154,.75);z-index:2}
+</style></head><body>
+<div class="stage">
+<svg class="leaf tl" viewBox="0 0 200 200" fill="none" stroke="#a3e635" stroke-width="1.4">
+<path d="M100 20 C40 60 30 140 100 190 C170 140 160 60 100 20Z"/>
+<path d="M100 30 L100 185"/>
+<path d="M100 70 L60 50 M100 70 L140 50 M100 110 L55 90 M100 110 L145 90 M100 150 L60 130 M100 150 L140 130"/>
+</svg>
+<svg class="leaf tr" viewBox="0 0 200 200" fill="none" stroke="#a3e635" stroke-width="1.4">
+<path d="M100 20 C40 60 30 140 100 190 C170 140 160 60 100 20Z"/>
+<path d="M100 30 L100 185"/>
+</svg>
+<svg class="leaf br" viewBox="0 0 200 200" fill="none" stroke="#a3e635" stroke-width="1.4">
+<path d="M100 20 C40 60 30 140 100 190 C170 140 160 60 100 20Z"/>
+<path d="M100 30 L100 185"/>
+<path d="M100 70 L60 50 M100 70 L140 50 M100 110 L55 90 M100 110 L145 90 M100 150 L60 130 M100 150 L140 130"/>
+</svg>
+<div class="safe">
+<p class="kicker">Wild &amp; free</p>
+<p class="quote">Grow where you are planted, even in the shade.</p>
+<p class="author">Unknown</p>
+</div><p class="brand">Daily Motivation</p></div>
+</body></html>

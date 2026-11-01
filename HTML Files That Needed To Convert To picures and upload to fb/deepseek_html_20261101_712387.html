@@ -1,0 +1,27 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Quote 43</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,700&family=Inter:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--w:1080px;--h:1920px;--ink:#eaf6ff;--accent:#67e8f9;--soft:#8fb3c9;}
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000}
+.stage{position:relative;width:var(--w);height:var(--h);overflow:hidden;
+background:linear-gradient(180deg,#041c2e 0%,#073b56 35%,#0a5f7a 65%,#0e7f8f 100%);
+color:var(--ink);font-family:'Inter',Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wave{position:absolute;left:0;right:0;border-radius:50%;filter:blur(2px);pointer-events:none}
+.wave.w1{bottom:0;height:420px;background:radial-gradient(120% 100% at 50% 0%,#0e7f8f 0%,#0a5f7a 60%,transparent 100%);opacity:.8}
+.wave.w2{bottom:60px;height:360px;background:radial-gradient(120% 100% at 30% 0%,#22d3ee 0%,rgba(34,211,238,0) 65%);opacity:.35}
+.wave.w3{top:180px;height:280px;background:radial-gradient(120% 100% at 70% 100%,#22d3ee 0%,rgba(34,211,238,0) 60%);opacity:.18}
+.stage::after{content:"";position:absolute;inset:0;background:radial-gradient(70% 50% at 50% 50%,rgba(0,0,0,0) 55%,rgba(0,0,0,.42) 100%);pointer-events:none}
+.safe{position:absolute;inset:300px 100px 340px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2}
+.ripple{width:80px;height:80px;border:2px solid var(--accent);border-radius:50%;margin-bottom:52px;position:relative;opacity:.85}
+.ripple::before,.ripple::after{content:"";position:absolute;inset:-16px;border:2px solid rgba(103,232,249,.45);border-radius:50%}
+.ripple::after{inset:-32px;border-color:rgba(103,232,249,.22)}
+.quote{font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-weight:700;font-size:104px;line-height:1.12;letter-spacing:-.4px}
+.author{margin-top:56px;font-size:28px;font-weight:500;letter-spacing:.28em;text-transform:uppercase;color:var(--accent)}
+.brand{position:absolute;bottom:80px;left:0;right:0;text-align:center;font-size:18px;letter-spacing:.44em;text-transform:uppercase;color:rgba(143,179,201,.8);z-index:2}
+</style></head><body>
+<div class="stage"><div class="wave w3"></div><div class="wave w2"></div><div class="wave w1"></div><div class="safe">
+<div class="ripple"></div>
+<p class="quote">Let it go. The waves will carry it out.</p>
+<p class="author">Unknown</p>
+</div><p class="brand">Daily Motivation</p></div>
+</body></html>

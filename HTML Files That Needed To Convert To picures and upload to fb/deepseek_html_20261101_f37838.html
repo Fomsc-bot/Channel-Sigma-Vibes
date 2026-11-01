@@ -1,0 +1,28 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Quote 28</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{--w:1080px;--h:1920px;--ink:#0f0f1a;--accent:#ff5d3b;--soft:#3a3a55;}
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000}
+.stage{position:relative;width:var(--w);height:var(--h);overflow:hidden;background:#f3efe0;
+color:var(--ink);font-family:'Space Mono',monospace;-webkit-font-smoothing:antialiased}
+.stage::before{content:"";position:absolute;inset:0;
+background:
+radial-gradient(2px 2px at 20% 30%,rgba(15,15,26,.18) 50%,transparent 51%),
+radial-gradient(2px 2px at 70% 60%,rgba(15,15,26,.14) 50%,transparent 51%),
+radial-gradient(2px 2px at 40% 80%,rgba(255,93,59,.25) 50%,transparent 51%);
+background-size:120px 120px,160px 160px,200px 200px;opacity:.9;pointer-events:none}
+.shape{position:absolute;pointer-events:none}
+.circle{width:520px;height:520px;border-radius:50%;background:var(--accent);mix-blend-mode:multiply;opacity:.85;top:-140px;right:-160px}
+.bar{width:100%;height:160px;background:var(--ink);bottom:120px;left:0;opacity:.95}
+.safe{position:absolute;inset:300px 100px 320px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2}
+.stamp{font-family:'Space Mono',monospace;font-size:20px;letter-spacing:.34em;border:3px solid var(--ink);padding:12px 24px;margin-bottom:52px;text-transform:uppercase;background:#f3efe0}
+.quote{font-family:'Archivo Black',Arial,sans-serif;font-size:100px;line-height:1.08;letter-spacing:-1.5px;text-transform:uppercase;color:var(--ink);text-shadow:6px 6px 0 var(--accent)}
+.author{margin-top:56px;font-family:'Space Mono',monospace;font-size:26px;letter-spacing:.2em;text-transform:uppercase;color:var(--soft)}
+.brand{position:absolute;bottom:160px;left:0;right:0;text-align:center;font-family:'Space Mono',monospace;font-size:18px;letter-spacing:.4em;text-transform:uppercase;color:rgba(243,239,224,.85);z-index:3}
+</style></head><body>
+<div class="stage"><div class="shape circle"></div><div class="shape bar"></div><div class="safe">
+<p class="stamp">No. 001</p>
+<p class="quote">Make it happen.</p>
+<p class="author">Unknown</p>
+</div><p class="brand">Daily Motivation</p></div>
+</body></html>

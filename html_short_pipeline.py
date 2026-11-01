@@ -49,6 +49,23 @@ def visible_text(source):
     parser.feed(source)
     return " ".join(parser.parts)[:5000]
 
+def center_scene_text(page):
+    page.evaluate("""() => {
+      const content = document.querySelector(".content");
+      if (!content) return;
+      const style = getComputedStyle(content);
+      const sidePadding = Math.max(
+        parseFloat(style.paddingLeft),
+        parseFloat(style.paddingRight)
+      );
+      content.style.setProperty("padding-left", `${sidePadding}px`, "important");
+      content.style.setProperty("padding-right", `${sidePadding}px`, "important");
+      content.style.setProperty("text-align", "center", "important");
+      content.querySelectorAll("*").forEach(element => {
+        element.style.setProperty("text-align", "center", "important");
+      });
+    }""")
+
 def metadata_prompt(scene_text):
     return (
         "Create accurate, platform-specific metadata for the exact short video described below. "
@@ -206,6 +223,7 @@ def render_html(source_file, duration, target):
         )
         page.goto(source_file.resolve().as_uri(), wait_until="load")
         page.evaluate("document.fonts.ready")
+        center_scene_text(page)
         page.evaluate("() => document.getAnimations().forEach(a => a.pause())")
         for i in range(frame_count):
             page.evaluate("t => document.getAnimations().forEach(a => { a.currentTime = t; })", i*1000/FPS)
@@ -236,7 +254,7 @@ def select_music():
 
 def add_music(silent, music, final, duration):
     run([FFMPEG,"-hide_banner","-loglevel","error","-y","-i",str(silent),"-stream_loop","-1","-i",str(music),
-         "-map","0:v:0","-map","1:a:0","-vf",f"fps={FPS},scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2",
+         "-map","0:v:0","-map","1:a:0","-vf",f"fps={FPS},scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop={WIDTH}:{HEIGHT},setsar=1",
          "-t",str(duration),"-r",str(FPS),"-c:v","libx264","-preset","veryfast","-pix_fmt","yuv420p",
          "-c:a","aac","-b:a","128k","-af","volume=0.18","-movflags","+faststart",str(final)])
 

@@ -1,0 +1,32 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Quote 38</title>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Inter:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--w:1080px;--h:1920px;--ink:#eef5e4;--accent:#ffe27a;--soft:#a8bfa0;}
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000}
+.stage{position:relative;width:var(--w);height:var(--h);overflow:hidden;
+background:
+radial-gradient(60% 40% at 30% 20%,#1c3a30 0%,transparent 55%),
+radial-gradient(50% 35% at 80% 85%,#173027 0%,transparent 55%),
+linear-gradient(180deg,#163026 0%,#0e231c 55%,#08160f 100%);
+color:var(--ink);font-family:'Inter',Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.stage::before{content:"";position:absolute;inset:0;
+background-image:
+radial-gradient(1.2px 1.2px at 15% 22%,rgba(255,255,255,.10) 50%,transparent 51%),
+radial-gradient(1.2px 1.2px at 70% 60%,rgba(255,255,255,.08) 50%,transparent 51%),
+radial-gradient(1.2px 1.2px at 42% 82%,rgba(255,255,255,.09) 50%,transparent 51%);
+background-size:180px 180px,220px 220px,260px 260px;pointer-events:none}
+.tray{position:absolute;bottom:0;left:0;right:0;height:48px;background:linear-gradient(180deg,#3a2818,#231810);border-top:6px solid #4a3524;z-index:3}
+.chalk{position:absolute;bottom:14px;left:120px;width:90px;height:14px;border-radius:3px;background:#f2ede0;box-shadow:0 2px 0 #d6d0c2;z-index:4}
+.chalk.b{left:auto;right:180px;background:#ffe27a;transform:rotate(-6deg)}
+.safe{position:absolute;inset:300px 100px 380px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2}
+.underline{width:200px;height:3px;background:var(--accent);margin-bottom:56px;border-radius:2px;box-shadow:0 0 20px rgba(255,226,122,.5)}
+.quote{font-family:'Caveat',cursive;font-weight:700;font-size:128px;line-height:1.04;letter-spacing:-.5px}
+.author{margin-top:56px;font-size:30px;font-weight:500;letter-spacing:.24em;text-transform:uppercase;color:var(--accent)}
+.brand{position:absolute;bottom:130px;left:0;right:0;text-align:center;font-size:18px;letter-spacing:.44em;text-transform:uppercase;color:rgba(168,191,160,.8);z-index:5}
+</style></head><body>
+<div class="stage"><div class="tray"></div><div class="chalk"></div><div class="chalk b"></div><div class="safe">
+<div class="underline"></div>
+<p class="quote">Be the change you wish to see in the world.</p>
+<p class="author">Gandhi</p>
+</div><p class="brand">Daily Motivation</p></div>
+</body></html>

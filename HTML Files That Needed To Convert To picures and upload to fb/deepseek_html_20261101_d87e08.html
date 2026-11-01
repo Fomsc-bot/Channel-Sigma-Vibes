@@ -1,0 +1,36 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Quote 30</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,900&family=Inter:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--w:1080px;--h:1920px;--ink:#f0f6ff;--accent:#ffd166;--soft:#9fb4d1;}
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000}
+.stage{position:relative;width:var(--w);height:var(--h);overflow:hidden;
+background:
+radial-gradient(60% 40% at 80% 15%,#1e3a8a 0%,transparent 55%),
+radial-gradient(50% 40% at 15% 80%,#312e81 0%,transparent 58%),
+linear-gradient(180deg,#0a1027 0%,#0f1c3d 45%,#050916 100%);
+color:var(--ink);font-family:'Inter',Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.stars{position:absolute;inset:0;pointer-events:none;opacity:.9;
+background-image:
+radial-gradient(1.6px 1.6px at 10% 12%,#fff 50%,transparent 51%),
+radial-gradient(1.3px 1.3px at 82% 8%,#fff 50%,transparent 51%),
+radial-gradient(1.8px 1.8px at 30% 26%,#cfe0ff 50%,transparent 51%),
+radial-gradient(1.4px 1.4px at 68% 34%,#fff 50%,transparent 51%),
+radial-gradient(1.7px 1.7px at 88% 52%,#fff 50%,transparent 51%),
+radial-gradient(1.3px 1.3px at 18% 62%,#cfe0ff 50%,transparent 51%),
+radial-gradient(1.6px 1.6px at 52% 76%,#fff 50%,transparent 51%),
+radial-gradient(1.4px 1.4px at 76% 88%,#fff 50%,transparent 51%),
+radial-gradient(1.5px 1.5px at 40% 90%,#cfe0ff 50%,transparent 51%)}
+.moon{position:absolute;top:140px;right:140px;width:150px;height:150px;border-radius:50%;
+background:radial-gradient(circle at 35% 35%,#fff8dc 0%,#ffe9a8 45%,#e6c76a 100%);
+box-shadow:0 0 90px 24px rgba(255,225,140,.35);pointer-events:none}
+.stage::after{content:"";position:absolute;inset:0;background:radial-gradient(70% 50% at 50% 50%,rgba(0,0,0,0) 55%,rgba(0,0,0,.5) 100%);pointer-events:none}
+.safe{position:absolute;inset:320px 100px 340px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2}
+.quote{font-family:'Playfair Display',Georgia,serif;font-style:italic;font-weight:900;font-size:100px;line-height:1.14;letter-spacing:-.5px;text-shadow:0 4px 26px rgba(0,0,0,.6)}
+.author{margin-top:56px;font-size:28px;font-weight:500;letter-spacing:.28em;text-transform:uppercase;color:var(--accent)}
+.brand{position:absolute;bottom:80px;left:0;right:0;text-align:center;font-size:18px;letter-spacing:.44em;text-transform:uppercase;color:rgba(159,180,209,.8);z-index:2}
+</style></head><body>
+<div class="stage"><div class="stars"></div><div class="moon"></div><div class="safe">
+<p class="quote">Even the darkest night will end and the sun will rise.</p>
+<p class="author">Victor Hugo</p>
+</div><p class="brand">Daily Motivation</p></div>
+</body></html>

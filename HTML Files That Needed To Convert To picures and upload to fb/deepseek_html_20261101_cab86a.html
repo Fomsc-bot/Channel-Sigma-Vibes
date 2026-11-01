@@ -1,0 +1,26 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Quote 69</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;800&family=Inter:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--w:1080px;--h:1920px;--ink:#fff5eb;--accent:#fde047;--soft:#ffe4b5;}
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000}
+.stage{position:relative;width:var(--w);height:var(--h);overflow:hidden;
+background:
+radial-gradient(circle at 50% 60%,#fde68a 0%,transparent 30%),
+linear-gradient(180deg,#4c1d95 0%,#9d174d 30%,#ea580c 55%,#f59e0b 72%,#fef3c7 82%,#0891b2 88%,#164e63 100%);
+color:var(--ink);font-family:'Inter',Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.sun{position:absolute;top:52%;left:50%;transform:translate(-50%,-50%);width:260px;height:260px;border-radius:50%;background:radial-gradient(circle,#fff8dc 0%,#fde68a 40%,#f59e0b 70%,rgba(245,158,11,0) 100%);box-shadow:0 0 120px 40px rgba(253,230,138,.55);pointer-events:none}
+.waves{position:absolute;left:0;right:0;bottom:0;height:340px;
+background:linear-gradient(180deg,rgba(8,145,178,0) 0%,#0891b2 25%,#164e63 100%);
+clip-path:polygon(0 20%,10% 25%,20% 18%,30% 28%,40% 20%,50% 26%,60% 20%,70% 28%,80% 22%,90% 27%,100% 20%,100% 100%,0 100%);
+pointer-events:none}
+.stage::after{content:"";position:absolute;inset:0;background:radial-gradient(70% 50% at 50% 50%,rgba(0,0,0,0) 55%,rgba(0,0,0,.35) 100%);pointer-events:none}
+.safe{position:absolute;inset:280px 110px 380px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2}
+.quote{font-family:'Outfit',Arial,sans-serif;font-weight:800;font-size:108px;line-height:1.1;letter-spacing:-1.2px;text-shadow:0 6px 30px rgba(0,0,0,.5)}
+.author{margin-top:56px;font-size:28px;font-weight:500;letter-spacing:.3em;text-transform:uppercase;color:var(--accent)}
+.brand{position:absolute;bottom:100px;left:0;right:0;text-align:center;font-size:18px;letter-spacing:.44em;text-transform:uppercase;color:rgba(255,228,181,.8);z-index:3}
+</style></head><body>
+<div class="stage"><div class="sun"></div><div class="waves"></div><div class="safe">
+<p class="quote">Every sunset is proof the world keeps turning.</p>
+<p class="author">Unknown</p>
+</div><p class="brand">Daily Motivation</p></div>
+</body></html>

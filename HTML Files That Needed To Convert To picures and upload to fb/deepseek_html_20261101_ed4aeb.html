@@ -1,0 +1,26 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Quote 18</title>
+<link href="https://fonts.googleapis.com/css2?family=Righteous&family=Inter:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--w:1080px;--h:1920px;--ink:#2d1b0e;--accent:#e76f51;--soft:#6e4a2e;}
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000}
+.stage{position:relative;width:var(--w);height:var(--h);overflow:hidden;
+background:
+radial-gradient(circle at 50% 30%,#ffd6a5 0 30%,transparent 31%),
+linear-gradient(165deg,#f4a261 0%,#e76f51 45%,#bc4749 100%);
+color:var(--ink);font-family:'Inter',Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.rings{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:820px;height:820px;border-radius:50%;border:6px solid rgba(45,27,14,.15);pointer-events:none}
+.rings::before,.rings::after{content:"";position:absolute;border-radius:50%;border:6px solid rgba(45,27,14,.12)}
+.rings::before{inset:70px}
+.rings::after{inset:150px}
+.safe{position:absolute;inset:300px 100px 320px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2}
+.badge{font-size:22px;font-weight:700;letter-spacing:.4em;text-transform:uppercase;background:var(--ink);color:#ffd6a5;padding:14px 30px;border-radius:40px;margin-bottom:48px}
+.quote{font-family:'Righteous',Arial,sans-serif;font-size:100px;line-height:1.12;letter-spacing:-1px}
+.author{margin-top:56px;font-size:28px;font-weight:500;letter-spacing:.26em;text-transform:uppercase;color:var(--soft)}
+.brand{position:absolute;bottom:80px;left:0;right:0;text-align:center;font-size:20px;letter-spacing:.44em;text-transform:uppercase;color:rgba(45,27,14,.65);z-index:2}
+</style></head><body>
+<div class="stage"><div class="rings"></div><div class="safe">
+<p class="badge">Good vibes</p>
+<p class="quote">Good things come to those who hustle.</p>
+<p class="author">Unknown</p>
+</div><p class="brand">Daily Motivation</p></div>
+</body></html>

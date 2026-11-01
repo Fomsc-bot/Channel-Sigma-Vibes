@@ -1,0 +1,47 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Quote 68</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,700&family=Inter:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--w:1080px;--h:1920px;--ink:#0f2a3d;--accent:#0e7490;--soft:#4a6a80;}
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000}
+.stage{position:relative;width:var(--w);height:var(--h);overflow:hidden;
+background:
+radial-gradient(60% 40% at 70% 15%,#e0f2fe 0%,transparent 55%),
+radial-gradient(55% 45% at 20% 85%,#cffafe 0%,transparent 60%),
+linear-gradient(170deg,#f0f9ff 0%,#dbeafe 55%,#bae6fd 100%);
+color:var(--ink);font-family:'Inter',Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.frost{position:absolute;pointer-events:none;opacity:.55}
+.frost svg{width:100%;height:100%}
+.f1{top:-40px;right:-40px;width:500px;height:500px}
+.f2{bottom:-60px;left:-60px;width:560px;height:560px;transform:rotate(180deg);opacity:.4}
+.snow{position:absolute;inset:0;pointer-events:none;opacity:.7;
+background-image:
+radial-gradient(2px 2px at 15% 22%,#fff 50%,transparent 51%),
+radial-gradient(2px 2px at 82% 68%,#fff 50%,transparent 51%),
+radial-gradient(2px 2px at 32% 48%,#fff 50%,transparent 51%),
+radial-gradient(2px 2px at 68% 12%,#fff 50%,transparent 51%),
+radial-gradient(2px 2px at 45% 88%,#fff 50%,transparent 51%);
+background-size:200px 200px,240px 240px,260px 260px,220px 220px,280px 280px}
+.stage::after{content:"";position:absolute;inset:0;background:radial-gradient(75% 55% at 50% 50%,rgba(0,0,0,0) 60%,rgba(30,70,110,.18) 100%);pointer-events:none}
+.safe{position:absolute;inset:320px 120px 340px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2}
+.flake{font-size:56px;color:var(--accent);margin-bottom:48px;letter-spacing:8px}
+.quote{font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-weight:700;font-size:108px;line-height:1.1;letter-spacing:-.5px}
+.author{margin-top:56px;font-size:28px;font-weight:500;letter-spacing:.3em;text-transform:uppercase;color:var(--accent)}
+.brand{position:absolute;bottom:160px;left:0;right:0;text-align:center;font-size:18px;letter-spacing:.44em;text-transform:uppercase;color:rgba(74,106,128,.85);z-index:2}
+</style></head><body>
+<div class="stage">
+<svg class="frost f1" viewBox="0 0 400 400" fill="none" stroke="#0e7490" stroke-width="1.4">
+<path d="M200 20 L200 380 M50 110 L350 290 M50 290 L350 110"/>
+<path d="M200 80 L160 60 M200 80 L240 60 M200 320 L160 340 M200 320 L240 340"/>
+<path d="M120 160 L100 120 M120 160 L80 180 M280 240 L300 280 M280 240 L320 220"/>
+</svg>
+<svg class="frost f2" viewBox="0 0 400 400" fill="none" stroke="#0e7490" stroke-width="1.4">
+<path d="M200 20 L200 380 M50 110 L350 290 M50 290 L350 110"/>
+<path d="M200 80 L160 60 M200 80 L240 60 M200 320 L160 340 M200 320 L240 340"/>
+</svg>
+<div class="snow"></div>
+<div class="safe">
+<p class="flake">❄ ❄ ❄</p>
+<p class="quote">Stillness is where clarity lives.</p>
+<p class="author">Unknown</p>
+</div><p class="brand">Daily Motivation</p></div>
+</body></html>

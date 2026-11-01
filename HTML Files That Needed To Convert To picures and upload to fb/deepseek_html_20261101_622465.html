@@ -1,0 +1,32 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Quote 60</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--w:1080px;--h:1920px;--ink:#ffffff;--accent:#22d3ee;--pink:#f472b6;--soft:#7a7a8a;}
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000}
+.stage{position:relative;width:var(--w);height:var(--h);overflow:hidden;background:#060612;
+color:var(--ink);font-family:'JetBrains Mono',monospace;-webkit-font-smoothing:antialiased}
+.scan{position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 2px,transparent 2px 4px);pointer-events:none;z-index:3}
+.glitch{position:absolute;left:0;right:0;height:6px;pointer-events:none;z-index:2}
+.g1{top:640px;background:var(--accent);opacity:.6;transform:translateX(-8px)}
+.g2{top:648px;background:var(--pink);opacity:.55;transform:translateX(12px)}
+.g3{top:1020px;background:var(--pink);opacity:.5;transform:translateX(-14px)}
+.g4{top:1026px;background:var(--accent);opacity:.6;transform:translateX(8px)}
+.noise{position:absolute;inset:0;background-image:radial-gradient(1.6px 1.6px at 18% 22%,rgba(34,211,238,.4) 50%,transparent 51%),radial-gradient(1.4px 1.4px at 72% 68%,rgba(244,114,182,.35) 50%,transparent 51%),radial-gradient(1.6px 1.6px at 40% 88%,rgba(255,255,255,.25) 50%,transparent 51%);background-size:140px 140px,180px 180px,220px 220px;opacity:.55;pointer-events:none}
+.safe{position:absolute;inset:300px 100px 320px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:4}
+.cursor{font-size:22px;letter-spacing:.4em;color:var(--accent);margin-bottom:44px}
+.cursor::after{content:"_";animation:none;color:var(--pink)}
+.quote{font-family:'Space Grotesk',Arial,sans-serif;font-weight:700;font-size:96px;line-height:1.14;letter-spacing:-1px;text-shadow:-2px 0 var(--pink),2px 0 var(--accent)}
+.author{margin-top:56px;font-size:24px;letter-spacing:.26em;text-transform:uppercase;color:var(--accent)}
+.brand{position:absolute;bottom:80px;left:0;right:0;text-align:center;font-size:18px;letter-spacing:.42em;text-transform:uppercase;color:rgba(122,122,138,.8);z-index:4}
+</style></head><body>
+<div class="stage">
+<div class="noise"></div>
+<div class="glitch g1"></div><div class="glitch g2"></div>
+<div class="glitch g3"></div><div class="glitch g4"></div>
+<div class="scan"></div>
+<div class="safe">
+<p class="cursor">// system.motivation</p>
+<p class="quote">Upgrade your mindset. Everything else follows.</p>
+<p class="author">Unknown</p>
+</div><p class="brand">Daily Motivation</p></div>
+</body></html>

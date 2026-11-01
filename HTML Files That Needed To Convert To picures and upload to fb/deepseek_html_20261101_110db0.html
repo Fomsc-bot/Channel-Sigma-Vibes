@@ -1,0 +1,30 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Quote 70</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Inter:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--w:1080px;--h:1920px;--ink:#e2e8f0;--accent:#22c55e;--soft:#94a3b8;}
+*{margin:0;padding:0;box-sizing:border-box}body{background:#000}
+.stage{position:relative;width:var(--w);height:var(--h);overflow:hidden;background:#0d1117;
+color:var(--ink);font-family:'JetBrains Mono',monospace;-webkit-font-smoothing:antialiased}
+.topbar{position:absolute;top:0;left:0;right:0;height:70px;background:#161b22;border-bottom:1px solid #30363d;display:flex;align-items:center;padding:0 40px;gap:14px;z-index:2}
+.dot{width:16px;height:16px;border-radius:50%}
+.d1{background:#ff5f56}.d2{background:#ffbd2e}.d3{background:#27c93f}
+.title{margin-left:auto;font-size:16px;color:var(--soft);letter-spacing:.1em}
+.line{position:absolute;top:70px;left:0;right:0;height:1px;background:#30363d}
+.safe{position:absolute;inset:300px 100px 320px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;z-index:2}
+.prompt{font-size:22px;color:var(--accent);letter-spacing:.2em;margin-bottom:44px}
+.prompt .dollar{color:var(--soft)}
+.prompt::after{content:"_";color:var(--accent)}
+.quote{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:76px;line-height:1.22;letter-spacing:-.5px;color:var(--ink)}
+.quote .kw{color:var(--accent)}
+.author{margin-top:56px;font-size:22px;letter-spacing:.26em;text-transform:uppercase;color:var(--soft)}
+.brand{position:absolute;bottom:80px;left:0;right:0;text-align:center;font-size:16px;letter-spacing:.42em;text-transform:uppercase;color:rgba(148,163,184,.75);z-index:2}
+</style></head><body>
+<div class="stage">
+<div class="topbar"><span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span><span class="title">~/motivation/readme.md</span></div>
+<div class="line"></div>
+<div class="safe">
+<p class="prompt"><span class="dollar">$</span> run daily_reminder</p>
+<p class="quote">Keep <span class="kw">shipping</span>. Progress is built in commits, not wishes.</p>
+<p class="author">Unknown</p>
+</div><p class="brand">Daily Motivation</p></div>
+</body></html>
