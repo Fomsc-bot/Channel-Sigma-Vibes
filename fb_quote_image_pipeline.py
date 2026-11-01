@@ -54,9 +54,11 @@ def metadata_prompt(image_text):
         "Use the quote and author shown in the image; do not invent or misattribute a quote. "
         "Title: a concise, emotionally resonant hook that accurately reflects the quote, with no "
         "hashtags. Caption: 10 to 30 words in one or two natural sentences, positive and relatable; "
-        "include the primary topic keyword naturally and end with a genuine question or gentle "
+        "use natural topic language without forcing an exact keyword phrase, and end with a genuine "
+        "question or gentle "
         "invitation to share. Avoid begging for reactions, engagement bait, clickbait, and promises "
-        "of reach. Keywords: an array of 3 to 5 short, relevant search phrases. Hashtags: exactly "
+        "of reach. Keywords: an array of 3 to 5 short, relevant search phrases ordered by relevance "
+        "to the image; they do not have to appear verbatim in the caption. Hashtags: exactly "
         "two relevant topic hashtags, each beginning with # and containing no spaces; the publisher "
         "adds #Motivation and the reusable #SigmaVibes brand tag. Avoid #viral, #trending, and "
         "#foryou. Alt_text: a concise, factual description of the image including its quote and "
@@ -90,9 +92,6 @@ def parse_metadata(raw):
             break
     if not 3 <= len(keywords) <= 5:
         raise ValueError("Gemini must return three to five unique Facebook keywords")
-    if keywords[0].casefold() not in caption.casefold():
-        raise ValueError("Facebook caption must naturally include its primary keyword")
-
     raw_hashtags = result.get("hashtags")
     if not isinstance(raw_hashtags, list):
         raise ValueError("Gemini Facebook hashtags must be a JSON array")
@@ -137,9 +136,12 @@ def generate_metadata(api_key, image_text):
         )
         if not response.text:
             raise RuntimeError(f"Gemini returned no metadata for {active_model}")
-        return parse_metadata(response.text)
     except Exception as error:
         raise RuntimeError(f"Gemini metadata request failed: {error}") from error
+    try:
+        return parse_metadata(response.text)
+    except Exception as error:
+        raise ValueError(f"Gemini returned invalid Facebook post metadata: {error}") from error
 
 
 def render_image(source_file, target):
