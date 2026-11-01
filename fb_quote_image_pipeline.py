@@ -14,9 +14,9 @@ import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
 
-from google import genai
-from google.genai import errors as genai_errors
 from playwright.sync_api import sync_playwright
+
+from gemini_retry import generate_content_with_fallback
 
 ROOT = Path(__file__).resolve().parent
 INPUT_DIR = ROOT / "HTML Files That Needed To Convert To picures and upload to fb"
@@ -127,30 +127,19 @@ def generate_metadata(api_key, image_text):
 
     model_name = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
     fallback_model = os.environ.get("GEMINI_FALLBACK_MODEL") or "gemini-3.6-flash"
-    client = genai.Client(api_key=api_key)
-
-    def request(model):
-        response = client.models.generate_content(
-            model=model,
-            contents=metadata_prompt(image_text),
-            config={"response_mime_type": "application/json"},
+    try:
+        response, active_model = generate_content_with_fallback(
+            api_key,
+            model_name,
+            fallback_model,
+            metadata_prompt(image_text),
+            {"response_mime_type": "application/json"},
         )
         if not response.text:
-            raise RuntimeError(f"Gemini returned no metadata for {model}")
+            raise RuntimeError(f"Gemini returned no metadata for {active_model}")
         return parse_metadata(response.text)
-
-    active_model = model_name
-    try:
-        try:
-            return request(model_name)
-        except genai_errors.APIError as error:
-            if error.code != 503 or fallback_model == model_name:
-                raise
-            print(f"Gemini {model_name} is unavailable; trying {fallback_model}.", file=sys.stderr)
-            active_model = fallback_model
-            return request(active_model)
     except Exception as error:
-        raise RuntimeError(f"Gemini metadata request failed for {active_model}: {error}") from error
+        raise RuntimeError(f"Gemini metadata request failed: {error}") from error
 
 
 def render_image(source_file, target):
