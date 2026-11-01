@@ -7,6 +7,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from google.oauth2.credentials import Credentials
 from google import genai
+from google.genai import errors as genai_errors
 import imageio_ffmpeg
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -163,13 +164,24 @@ def parse_metadata(raw, provider):
 
 def generate_with_gemini(api_key, prompt):
     model_name = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+    fallback_model = os.environ.get("GEMINI_FALLBACK_MODEL") or "gemini-3.6-flash"
     try:
         client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config={"response_mime_type": "application/json"},
-        )
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config={"response_mime_type": "application/json"},
+            )
+        except genai_errors.APIError as error:
+            if error.code != 503 or fallback_model == model_name:
+                raise
+            response = client.models.generate_content(
+                model=fallback_model,
+                contents=prompt,
+                config={"response_mime_type": "application/json"},
+            )
+            model_name = fallback_model
     except Exception as error:
         raise RuntimeError(f"Gemini API request failed for {model_name}: {error}") from error
     if not response.text:
