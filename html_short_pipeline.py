@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Render one inline-CSS HTML scene and publish it as a YouTube Short."""
 from __future__ import annotations
 import json, os, random, re, subprocess, sys, urllib.error, urllib.parse, urllib.request
@@ -20,7 +20,7 @@ ROTATION_FILE = ROOT / "content" / "music_rotation.json"
 PUBLISH_STATE_FILE = ROOT / "content" / "publish_state.json"
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 WIDTH, HEIGHT, FPS = 1080, 1920, 30
-LAYOUT_WIDTH, LAYOUT_HEIGHT, DEVICE_SCALE = 540, 960, 2
+LAYOUT_WIDTH, LAYOUT_HEIGHT, DEVICE_SCALE = 1080, 1920, 1
 
 class TextExtractor(HTMLParser):
     def __init__(self):
@@ -66,29 +66,87 @@ def center_scene_text(page):
     }""")
 
 def remove_video_borders(page):
-        page.add_style_tag(content="""
-            *, *::before, *::after {
-                border: 0 !important;
-                outline: 0 !important;
-                box-shadow: none !important;
-            }
-            html, body {
-                width: 100% !important;
-                height: 100% !important;
-                margin: 0 !important;
-                overflow: hidden !important;
-            }
-            body > .frame {
-                position: fixed !important;
-                inset: 0 !important;
-                width: 100vw !important;
-                height: 100vh !important;
-                max-width: none !important;
-                max-height: none !important;
-                aspect-ratio: auto !important;
-                border-radius: 0 !important;
-            }
-        """)
+    page.add_style_tag(content="""
+        *, *::before, *::after {
+            box-shadow: none !important;
+            outline: none !important;
+        }
+        html, body {
+            width: 1080px !important;
+            height: 1920px !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+            background: #101c2e !important;
+        }
+        .frame {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: 1080px !important;
+            height: 1920px !important;
+            max-width: none !important;
+            max-height: none !important;
+            min-width: 1080px !important;
+            min-height: 1920px !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            aspect-ratio: auto !important;
+            transform: none !important;
+            overflow: hidden !important;
+        }
+        /* Remove artificial framing lines, dividers and fake borders */
+        .gridline, .broken, .top-band, .bottom-band, .polaroid {
+            display: none !important;
+        }
+        .door, .ring, .card {
+            border: none !important;
+        }
+        .cta {
+            border: none !important;
+            background: rgba(255, 255, 255, 0.12) !important;
+        }
+    """)
+    page.evaluate("""() => {
+        const frame = document.querySelector('.frame');
+        const bg = document.querySelector('.bg, [class*="bg"]');
+
+        // Detect theme color from existing markup / styling
+        const text = document.documentElement.innerHTML;
+        let centerColor = "#1e3552";
+        let edgeColor = "#111d2e";
+
+        if (text.includes('--rose') || text.includes('#ff6b8a') || text.includes('Theme: Love')) {
+            centerColor = "#3d1424";
+            edgeColor = "#200d17";
+        } else if (text.includes('--gold') && (text.includes('#140e04') || text.includes('#2e1a0a') || text.includes('#1a0f06'))) {
+            centerColor = "#332211";
+            edgeColor = "#1c140c";
+        } else if (text.includes('--ice') || text.includes('Theme: Stoicism')) {
+            centerColor = "#1e3552";
+            edgeColor = "#111d2e";
+        } else if (text.includes('#1a0a2e') || text.includes('#1e0a1e') || text.includes('Theme: Identity')) {
+            centerColor = "#2b143a";
+            edgeColor = "#170a21";
+        }
+
+        const gradient = `radial-gradient(ellipse at 50% 50%, ${centerColor} 0%, ${edgeColor} 100%)`;
+        document.body.style.setProperty("background", gradient, "important");
+
+        if (bg) {
+            bg.style.setProperty("position", "absolute", "important");
+            bg.style.setProperty("inset", "0", "important");
+            bg.style.setProperty("width", "100%", "important");
+            bg.style.setProperty("height", "100%", "important");
+            bg.style.setProperty("background-size", "cover", "important");
+            bg.style.setProperty("background", gradient, "important");
+        } else if (frame) {
+            frame.style.setProperty("background", gradient, "important");
+        }
+    }""")
 
 def metadata_prompt(scene_text):
     return (
@@ -252,7 +310,8 @@ def render_html(source_file, duration, target):
         browser.close()
     run([FFMPEG,"-hide_banner","-loglevel","error","-y","-framerate",str(FPS),"-i",
          str(frame_dir/"frame-%06d.png"),"-an","-c:v","libx264","-preset","veryfast",
-         "-pix_fmt","yuv420p","-r",str(FPS),"-t",str(duration),str(target)])
+         "-pix_fmt","yuv420p","-colorspace","bt709","-color_primaries","bt709",
+         "-color_trc","bt709","-color_range","tv","-r",str(FPS),"-t",str(duration),str(target)])
     for frame in frame_dir.glob("frame-*.png"): frame.unlink()
     frame_dir.rmdir()
 
@@ -272,6 +331,7 @@ def add_music(silent, music, final, duration):
     run([FFMPEG,"-hide_banner","-loglevel","error","-y","-i",str(silent),"-stream_loop","-1","-i",str(music),
          "-map","0:v:0","-map","1:a:0","-vf",f"fps={FPS},scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos,crop={WIDTH}:{HEIGHT},setsar=1",
          "-t",str(duration),"-r",str(FPS),"-c:v","libx264","-preset","veryfast","-pix_fmt","yuv420p",
+         "-colorspace","bt709","-color_primaries","bt709","-color_trc","bt709","-color_range","tv",
          "-c:a","aac","-b:a","128k","-af","volume=0.18","-movflags","+faststart",str(final)])
 
 def upload_youtube(video, metadata):
