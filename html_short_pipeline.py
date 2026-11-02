@@ -406,6 +406,45 @@ def upload_facebook_reel(video, metadata):
         raise RuntimeError(f"Facebook did not confirm publishing the Reel: {finished}")
     return video_id
 
+def share_reel_to_facebook_groups(video_id, caption, token, group_ids, max_groups=9):
+    """Share a published Page Reel link to up to *max_groups* randomly chosen FB groups.
+
+    Each group post embeds the Reel URL so it auto-previews in the feed.
+    Errors for individual groups are printed but do NOT abort the pipeline.
+    Returns a list of (group_id, post_id) pairs for every successful share.
+    """
+    version = os.environ.get("FB_GRAPH_API_VERSION", "v26.0")
+    api_root = f"https://graph.facebook.com/{version}"
+    page_id  = os.environ["FB_PAGE_ID"]
+    reel_url = f"https://www.facebook.com/{page_id}/videos/{video_id}/"
+
+    chosen = random.sample(group_ids, min(max_groups, len(group_ids)))
+    results = []
+    for gid in chosen:
+        fields = urllib.parse.urlencode({
+            "link":         reel_url,
+            "message":      caption,
+            "access_token": token,
+        }).encode()
+        req = urllib.request.Request(
+            f"{api_root}/{gid}/feed",
+            data=fields,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.load(resp)
+            post_id = data.get("id", "unknown")
+            results.append((gid, post_id))
+            print(f"  Shared to group {gid} → post {post_id}")
+        except urllib.error.HTTPError as err:
+            details = err.read().decode("utf-8", errors="replace")
+            print(f"  WARNING: could not share to group {gid}: HTTP {err.code}: {details}",
+                  file=sys.stderr)
+        except Exception as err:
+            print(f"  WARNING: could not share to group {gid}: {err}", file=sys.stderr)
+    return results
+
 def load_publish_state():
     if not PUBLISH_STATE_FILE.exists():
         return {}
@@ -418,7 +457,7 @@ def save_publish_state(state):
 def main():
     if not os.environ.get("GEMINI_API_KEY"):
         raise RuntimeError("Set GEMINI_API_KEY for metadata generation")
-    required = ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN", "FB_PAGE_ID", "FB_PAGE_ACCESS_TOKEN")
+    required = ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN", "FB_PAGE_ID", "FB_PAGE_ACCESS_TOKEN", "FB_GROUP_IDS")
     missing = [key for key in required if not os.environ.get(key)]
     if missing:
         raise RuntimeError("Set these GitHub secrets before running: " + ", ".join(missing))
@@ -452,6 +491,18 @@ def main():
     print(f"Published {source.name} to YouTube ({youtube_id}) and Facebook ({facebook_id}); removed source HTML.")
     print(f"YouTube title: {metadata['youtube_title']}")
     print(f"Facebook hook: {metadata['facebook_caption'].splitlines()[0]}")
+    # ---- Share Reel to random FB groups ----
+    raw_group_ids = os.environ.get("FB_GROUP_IDS", "")
+    group_ids = [g.strip() for g in raw_group_ids.split(",") if g.strip()]
+    if group_ids:
+        facebook_tags = ["#fbreels"] + metadata["facebook_hashtags"] + ["#SigmaVibes"]
+        group_caption = metadata["facebook_caption"] + "\n\n" + " ".join(facebook_tags)
+        fb_token = os.environ["FB_PAGE_ACCESS_TOKEN"]
+        print(f"Sharing Reel to {min(9, len(group_ids))} of {len(group_ids)} joined groups...")
+        shares = share_reel_to_facebook_groups(facebook_id, group_caption, fb_token, group_ids)
+        print(f"Successfully shared to {len(shares)} group(s).")
+    else:
+        print("FB_GROUP_IDS not set; skipping group shares.")
 
 if __name__ == "__main__":
     try: main()

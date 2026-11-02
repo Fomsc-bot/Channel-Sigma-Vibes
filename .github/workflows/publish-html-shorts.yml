@@ -1,4 +1,4 @@
-name: Publish HTML Shorts
+﻿name: Publish HTML Shorts
 
 on:
   schedule:
@@ -74,6 +74,7 @@ jobs:
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
           FB_GRAPH_API_VERSION: v26.0
+          FB_GROUP_IDS: ${{ secrets.FB_GROUP_IDS }}
         run: python html_short_pipeline.py
 
       - name: Commit delivery state and consumed HTML/music rotation
