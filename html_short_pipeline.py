@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Render one inline-CSS HTML scene and publish it as a YouTube Short."""
 from __future__ import annotations
 import json, os, random, re, subprocess, sys, urllib.error, urllib.parse, urllib.request
