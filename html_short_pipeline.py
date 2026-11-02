@@ -65,6 +65,31 @@ def center_scene_text(page):
       });
     }""")
 
+def remove_video_borders(page):
+        page.add_style_tag(content="""
+            *, *::before, *::after {
+                border: 0 !important;
+                outline: 0 !important;
+                box-shadow: none !important;
+            }
+            html, body {
+                width: 100% !important;
+                height: 100% !important;
+                margin: 0 !important;
+                overflow: hidden !important;
+            }
+            body > .frame {
+                position: fixed !important;
+                inset: 0 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                max-width: none !important;
+                max-height: none !important;
+                aspect-ratio: auto !important;
+                border-radius: 0 !important;
+            }
+        """)
+
 def metadata_prompt(scene_text):
     return (
         "Create accurate, platform-specific metadata for the exact short video described below. "
@@ -214,6 +239,7 @@ def render_html(source_file, duration, target):
         page.goto(source_file.resolve().as_uri(), wait_until="load")
         page.evaluate("document.fonts.ready")
         center_scene_text(page)
+        remove_video_borders(page)
         page.evaluate("() => document.getAnimations().forEach(a => a.pause())")
         for i in range(frame_count):
             page.evaluate("t => document.getAnimations().forEach(a => { a.currentTime = t; })", i*1000/FPS)
