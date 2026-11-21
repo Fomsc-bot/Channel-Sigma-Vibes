@@ -148,7 +148,16 @@ def remove_video_borders(page):
         }
     }""")
 
-def metadata_prompt(scene_text):
+def metadata_prompt(scene_text, campaign_brief=""):
+    campaign_instructions = ""
+    if campaign_brief:
+        campaign_instructions = (
+            "\n\nContent Rewards campaign brief (follow its explicit requirements that can "
+            "be satisfied in this video and its metadata; do not invent claims or facts):\n"
+            + campaign_brief[:5000]
+            + "\nSatisfy any explicit title, description, disclosure, account tag, or link "
+            "requirements that apply to the YouTube post.\n"
+        )
     return (
         "Create accurate, platform-specific metadata for the exact short video described below. "
         "Return a JSON object with exactly these keys: youtube_title, youtube_description, "
@@ -171,7 +180,9 @@ def metadata_prompt(scene_text):
         "one broad Reels hashtag and the reusable #SigmaVibes brand hashtag. "
         "Avoid generic tags such as #viral, #trending, and #foryou, engagement bait, clickbait, "
         "unsupported claims, and promises of views or virality. Do not invent details not present "
-        "in the video.\n\nVideo text:\n" + scene_text
+        "in the video."
+        + campaign_instructions
+        + "\n\nVideo text:\n" + scene_text
     )
 
 def parse_metadata(raw, provider):
@@ -278,10 +289,10 @@ def generate_with_gemini(api_key, prompt):
         raise RuntimeError(f"Gemini returned no metadata for {model_name}")
     return parse_metadata(response.text, "Gemini")
 
-def generate_metadata(gemini_key, scene_text):
+def generate_metadata(gemini_key, scene_text, campaign_brief=""):
     if not gemini_key:
         raise RuntimeError("Set GEMINI_API_KEY for metadata generation")
-    return generate_with_gemini(gemini_key, metadata_prompt(scene_text))
+    return generate_with_gemini(gemini_key, metadata_prompt(scene_text, campaign_brief))
 
 def render_html(source_file, duration, target):
     frame_count = round(duration * FPS)
